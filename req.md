@@ -1,5 +1,5 @@
 Context
-You receive the full output of a Freqtrade walk-forward Hyperopt run (trades, per-step equity, and the hyper-parameter grid). Build a single, share-ready report (HTML or Jupyter-notebook) that convinces an experienced quant/trading-bot reviewer that the strategy is both profitable and robust.
+You are orchestrating a Freqtrade walk-forward Hyperopt run . Build a single, share-ready report (HTML or Jupyter-notebook) that convinces an experienced quant/trading-bot reviewer that the strategy is both profitable and robust.
 
 Deliverables & Rationale
 	1.	Global summary table – Show CAGR, total return %, total trades, win %, profit factor, Sharpe, Sortino, Calmar, max drawdown %, and market exposure %.
