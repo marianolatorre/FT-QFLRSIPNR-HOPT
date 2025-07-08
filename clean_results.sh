@@ -28,6 +28,9 @@ clean_directory "user_data/hyperopt_results" "Hyperopt Results"
 # Clean walk forward results
 clean_directory "walk_forward_results" "Walk Forward Results"
 
+# Clean plot files
+clean_directory "user_data/plot" "Plot Files"
+
 echo ""
 echo "🎉 All results directories have been cleaned!"
 echo ""
@@ -35,5 +38,6 @@ echo "Directory status:"
 echo "  📁 user_data/backtest_results/: $(ls -la user_data/backtest_results/ 2>/dev/null | wc -l | tr -d ' ') items"
 echo "  📁 user_data/hyperopt_results/: $(ls -la user_data/hyperopt_results/ 2>/dev/null | wc -l | tr -d ' ') items" 
 echo "  📁 walk_forward_results/: $(ls -la walk_forward_results/ 2>/dev/null | wc -l | tr -d ' ') items"
+echo "  📁 user_data/plot/: $(ls -la user_data/plot/ 2>/dev/null | wc -l | tr -d ' ') items"
 echo ""
 echo "Ready for fresh walk forward testing! 🚀"
