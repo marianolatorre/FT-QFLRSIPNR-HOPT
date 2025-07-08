@@ -4,6 +4,7 @@ user_data/backtest_results/
 user_data/hyperopt_results/
 user_data/logs/
 user_data/models/
+user_data/plot/
 user_data/tradesv3.sqlite*
 walk_forward_results/
 .last_result.json
