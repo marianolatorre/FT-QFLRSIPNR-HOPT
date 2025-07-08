@@ -39,7 +39,9 @@
         "ccxt_config": {},
         "ccxt_async_config": {},
         "pair_whitelist": [
-            "BTC/USDT:USDT"
+            "BTC/USDT:USDT",
+            "SOL/USDT:USDT",
+            "DOGE/USDT:USDT"
         ],
         "pair_blacklist": [
             "BNB/.*"
