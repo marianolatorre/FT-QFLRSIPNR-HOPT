@@ -1,90 +1,236 @@
 
-# Requirements
+# Freqtrade Walk Forward Testing
 
-Docker desktop installed.
+A comprehensive walk forward testing framework for Freqtrade algorithmic trading strategies with support for automated backtesting and hyperopt optimization.
 
-# Installation
+## Features
 
-Download docker-compose.yml
-```
-curl https://raw.githubusercontent.com/freqtrade/freqtrade/stable/docker-compose.yml -o docker-compose.yml
-```
-Pull the freqtrade image
-```
-docker compose pull
+- **Walk Forward Testing**: Automated time-series cross-validation for trading strategies
+- **Hyperopt Integration**: Automatic parameter optimization using Freqtrade's hyperopt
+- **Multi-Strategy Support**: Compatible with different hyperopt spaces (buy/sell, roi/stoploss, etc.)
+- **Comprehensive Reporting**: Detailed HTML reports with performance metrics
+- **Docker Support**: Full containerized environment for consistent testing
+
+## Requirements
+
+- Docker Desktop installed
+- Python 3.8+
+- At least 8GB RAM for large datasets
+
+## Installation
+
+1. **Download docker-compose.yml**
+   ```bash
+   curl https://raw.githubusercontent.com/freqtrade/freqtrade/stable/docker-compose.yml -o docker-compose.yml
+   ```
+
+2. **Pull the freqtrade image**
+   ```bash
+   docker compose pull
+   ```
+
+3. **Create user directory structure**
+   ```bash
+   docker compose run --rm freqtrade create-userdir --userdir user_data
+   ```
+
+4. **Create configuration**
+   ```bash
+   docker compose run --rm freqtrade new-config --config user_data/config.json
+   ```
+
+## Data Setup
+
+### Data Requirements for Walk Forward Testing
+
+Walk forward testing requires sufficient historical data to cover all time periods. Calculate your data needs:
+- **Total days needed** = (insample-days + outsample-days) × num-walks + startup buffer
+- **Example**: 12 walks with 120-day in-sample + 30-day out-of-sample = ~1800 days minimum
+
+### Futures Trading (Recommended)
+
+**For extensive walk forward testing (1000+ days)**:
+```bash
+docker-compose run --rm freqtrade download-data --exchange bybit --pairs BTC/USDT:USDT --timeframes 1h --days 1000 --trading-mode futures --erase
 ```
 
-Create user directory structure
-```
-docker compose run --rm freqtrade create-userdir --userdir user_data
-```
-
-Create configuration - Requires answering interactive questions
-```
-docker compose run --rm freqtrade new-config --config user_data/config.json
-```
-
-
-# Steps
-
-
-## Download data
-
-I recommend trying with Futures, since the rest of the steps are already implemented for futures.
-
-### Spot
-```
-docker-compose run --rm freqtrade download-data --exchange binance --pairs BTC/USDT --timeframes 1h --days 15 --trading-mode spot
-```
-### Futures
-Let's download a year of data for BTC perps on Bybit:
-```
+**For basic testing (1 year)**:
+```bash
 docker-compose run --rm freqtrade download-data --exchange bybit --pairs BTC/USDT:USDT --timeframes 1h --days 365 --trading-mode futures
 ```
 
-## Run backtest
-
-If you want to backtest a specific period you can use the below or skip it if you only want to test walk forward.
- ```
-docker-compose run --rm freqtrade backtesting --config user_data/config_spot.json --strategy QFLRSI_Strategy --timeframe 1h --timerange 20250609- --export trades
+### Spot Trading
+```bash
+docker-compose run --rm freqtrade download-data --exchange binance --pairs BTC/USDT --timeframes 1h --days 365 --trading-mode spot
 ```
 
-## Server up/down
-This includes the webserver. `docker-compose.yml` and `user_data/config.json` are configured for backtesting and web UI.
+### Important: Data Coverage Issues
 
-```
-docker-compose up -d freqtrade
-docker-compose down  
-```
+⚠️ **Always use `--erase` for large data downloads**. Without it, Freqtrade only downloads from the end of existing data to present, which may create gaps:
 
-## Clean backtest results
-Healthy to keep it clean before running a WF that will produce many backtest files.
-```
-rm -rf user_data/backtest_results/*
+```bash
+# ❌ Wrong - may create data gaps
+docker-compose run --rm freqtrade download-data --days 1000
+
+# ✅ Correct - ensures complete historical coverage
+docker-compose run --rm freqtrade download-data --days 1000 --erase
 ```
 
-## Hyperopt
-Run hyperopt manually:
+If your walk forward test fails with "ValueError: min() iterable argument is empty", check that your data covers the required date ranges for all walks.
+
+## Usage
+
+### Walk Forward Testing
+
+The walk forward test automatically performs hyperopt optimization followed by backtesting across time periods.
+
+#### Parameters
+
+- `--insample-days` - Length of the training period (hyperopt optimization)
+- `--outsample-days` - Length of the testing period (out-of-sample validation)
+- `--num-walks` - Number of walk forward iterations to perform
+- `--epochs` - Number of hyperopt optimization epochs per walk (default: 200)
+- `--strategy` - Strategy name to test (default: QFLRSI_Strategy)
+- `--spaces` - Hyperopt spaces to optimize (default: buy sell)
+- `--generate-report` - Generate comprehensive HTML report after completion
+- `--pair` - Trading pair to test (default: BTC/USDT:USDT)
+- `--hyperopt-loss` - Optimization objective function (default: SharpeHyperOptLoss)
+- `--config` - Configuration file path (default: user_data/config.json)
+- `--end-date` - End date for testing in YYYYMMDD format (default: today)
+
+#### Basic Usage
+```bash
+python3 walk_forward_test.py --insample-days 30 --outsample-days 15 --num-walks 3
 ```
+
+#### Strategy Examples
+
+**QFLRSI_Strategy (Buy/Sell Spaces)**
+```bash
+python3 walk_forward_test.py \
+    --insample-days 30 \
+    --outsample-days 15 \
+    --num-walks 3 \
+    --epochs 400 \
+    --strategy QFLRSI_Strategy \
+    --spaces buy sell \
+    --generate-report
+```
+
+**QFL_Strategy_SLTP (ROI/Stoploss Optimization)**
+```bash
+python3 walk_forward_test.py \
+    --insample-days 30 \
+    --outsample-days 15 \
+    --num-walks 3 \
+    --epochs 400 \
+    --strategy QFL_Strategy_SLTP \
+    --spaces buy roi stoploss \
+    --generate-report
+```
+
+### Manual Operations
+
+#### Individual Backtest
+```bash
+docker-compose run --rm freqtrade backtesting \
+    --config user_data/config.json \
+    --strategy QFLRSI_Strategy \
+    --timeframe 1h \
+    --timerange 20250609- \
+    --export trades
+```
+
+#### Manual Hyperopt
+```bash
 docker-compose run --rm freqtrade hyperopt \
-      --config user_data/config_spot.json \
-      --strategy QFLRSI_Strategy \
-      --hyperopt-loss SharpeHyperOptLoss \
-      --spaces buy sell \
-      --epochs 200 \
-      --timeframe 1h \
-      --timerange 20250308-20250608 \
-      -j -1
+    --config user_data/config.json \
+    --strategy QFLRSI_Strategy \
+    --hyperopt-loss SharpeHyperOptLoss \
+    --spaces buy sell \
+    --epochs 200 \
+    --timeframe 1h \
+    --timerange 20250308-20250608 \
+    -j -1
 ```
-Check the best results right after hyperopt:
-```
+
+#### View Hyperopt Results
+```bash
 docker-compose run --rm freqtrade hyperopt-show -n -1
 ```
 
+## Strategies
 
-## Walk forward
+### QFLRSI_Strategy
+- **Hyperopt Spaces**: `buy sell`
+- **Description**: QFL (Quickfingers Luc) strategy with RSI confirmation
+- **Parameters**: RSI periods, QFL levels, buy/sell signal optimization
 
-Example of running the WF with 3 out-of-sample walks of 30 days and validating with 15 days in-sample.
+### QFL_Strategy_SLTP
+- **Hyperopt Spaces**: `buy roi stoploss`
+- **Description**: QFL strategy with optimized stop-loss and take-profit levels
+- **Parameters**: ROI table optimization, dynamic stoploss, entry signal timing
+
+## Output Files
+
+### Walk Forward Results
+- `walk_forward_results/[timestamp]/` - Complete walk forward analysis
+- `combined_results.json` - Aggregated performance metrics
+- `hyperopt_walk_[n].json` - Hyperopt results for each walk
+- `backtest_walk_[n].json` - Backtest results for each walk
+- `walk_forward_report.html` - Professional HTML report (generated with `--generate-report`)
+
+### Backtest Results
+- `user_data/backtest_results/` - Individual backtest files
+- Preserved across runs (no automatic cleanup)
+
+## Web Interface
+
+Start the Freqtrade web UI:
+```bash
+docker-compose up -d freqtrade
 ```
-python3 walk_forward_test.py --insample-days 30 --outsample-days 15 --num-walks 3      
+
+Access at: http://localhost:8080
+
+Stop the service:
+```bash
+docker-compose down
 ```
+
+## Troubleshooting
+
+### Common Issues
+
+1. **Memory Issues**: Reduce epochs or time ranges for large datasets
+2. **Docker Permissions**: Ensure Docker has proper permissions
+3. **Data Availability**: Verify data exists for specified time ranges
+
+### Cleaning Up
+
+Clean all results directories before starting fresh tests:
+```bash
+./clean_results.sh
+```
+
+This script safely removes all files from:
+- `user_data/backtest_results/` - Backtest result files
+- `user_data/hyperopt_results/` - Hyperopt optimization files  
+- `walk_forward_results/` - Walk forward analysis results
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Add tests for new functionality
+4. Submit a pull request
+
+## License
+
+This project follows the same license as Freqtrade.
+
+## Support
+
+For issues related to:
+- Freqtrade core functionality: [Freqtrade GitHub](https://github.com/freqtrade/freqtrade)
+- Walk forward testing: Create an issue in this repository
