@@ -8,14 +8,15 @@ from freqtrade.strategy import IStrategy, DecimalParameter, IntParameter, merge_
 import talib.abstract as ta
 
 
-class QFL_Strategy(IStrategy):
+class QFL_Strategy_SLTP(IStrategy):
     """
-    QFL (Quickfinger Luc) Strategy Implementation
+    QFL (Quickfinger Luc) Strategy Implementation with SL/TP Hyperopt
     Based on the Pine Script QFL single TF v1.3
     
     - Detects fractal highs/lows with volume confirmation
     - Uses higher timeframe for base detection
     - Enters on percentage breaks below/above bases
+    - Exits purely via optimized stop loss and take profit (ROI)
     """
     
     # Strategy interface version
@@ -27,16 +28,25 @@ class QFL_Strategy(IStrategy):
     # Can this strategy go short?
     can_short = False
     
-    # Minimal ROI designed for the strategy
-    minimal_roi = {
-        "0": 0.05,
-        "30": 0.03,
-        "60": 0.02,
-        "120": 0.01
-    }
+    # Hyperopt-optimized ROI parameters (take profit)
+    roi_t1 = DecimalParameter(0.01, 0.15, default=0.05, space='roi', optimize=True)
+    roi_t2 = DecimalParameter(0.01, 0.10, default=0.03, space='roi', optimize=True)
+    roi_t3 = DecimalParameter(0.005, 0.05, default=0.02, space='roi', optimize=True)
     
-    # Optimal stoploss
-    stoploss = -0.15
+    # Hyperopt-optimized stoploss
+    stoploss_opt = DecimalParameter(-0.35, -0.02, default=-0.15, space='stoploss')
+    
+    def __init__(self, config: dict) -> None:
+        super().__init__(config)
+        # Set minimal_roi dynamically based on hyperopt parameters
+        self.minimal_roi = {
+            "0": self.roi_t1.value,
+            "30": self.roi_t2.value,
+            "60": self.roi_t3.value,
+            "120": 0
+        }
+        # Set stoploss value
+        self.stoploss = self.stoploss_opt.value
     
     # Trailing stoploss
     trailing_stop = False
@@ -68,7 +78,6 @@ class QFL_Strategy(IStrategy):
     qfl_timeframe = '1h'  # Higher timeframe for base detection
     volume_ma_period = IntParameter(5, 10, default=6, space='buy')
     buy_percentage = DecimalParameter(2.0, 5.0, default=3.5, space='buy')
-    sell_percentage = DecimalParameter(2.0, 5.0, default=3.5, space='sell') 
     max_base_age = IntParameter(0, 50, default=0, space='buy')  # 0 = disabled
     allow_consecutive_signals = True  # Pine: allowConsecutiveSignals
     
@@ -230,40 +239,12 @@ class QFL_Strategy(IStrategy):
         
         dataframe.loc[buy_condition, 'enter_long'] = 1
         
-        # Short entry: price rises X% above up fractal
-        dataframe.loc[
-            (
-                (100 * (dataframe['close'] / dataframe['qfl_fractal_up']) > (100 + self.sell_percentage.value)) &
-                age_condition &
-                (dataframe['qfl_fractal_up'].notna()) &
-                (dataframe['volume'] > 0)
-            ),
-            'enter_short'
-        ] = 1
-        
         return dataframe
     
     def populate_exit_trend(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
         """
-        QFL Exit Logic
-        Exit on opposite fractal break or new base formation
+        QFL Exit Logic - DISABLED
+        This strategy relies purely on stop loss and take profit (ROI) for exits
         """
-        # Exit long when price rises X% above up fractal
-        dataframe.loc[
-            (
-                (100 * (dataframe['close'] / dataframe['qfl_fractal_up']) > (100 + self.sell_percentage.value)) &
-                (dataframe['qfl_fractal_up'].notna())
-            ),
-            'exit_long'
-        ] = 1
-        
-        # Exit short when price falls X% below down fractal  
-        dataframe.loc[
-            (
-                (100 * (dataframe['close'] / dataframe['qfl_fractal_down']) < (100 - self.buy_percentage.value)) &
-                (dataframe['qfl_fractal_down'].notna())
-            ),
-            'exit_short'
-        ] = 1
-        
+        # No exit signals - pure SL/TP reliance
         return dataframe
