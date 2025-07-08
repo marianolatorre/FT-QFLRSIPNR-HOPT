@@ -7,8 +7,10 @@ A comprehensive walk forward testing framework for Freqtrade algorithmic trading
 
 - **Walk Forward Testing**: Automated time-series cross-validation for trading strategies
 - **Hyperopt Integration**: Automatic parameter optimization using Freqtrade's hyperopt
+- **Multi-Asset Support**: Test any trading pair with automatic data download and validation
 - **Multi-Strategy Support**: Compatible with different hyperopt spaces (buy/sell, roi/stoploss, etc.)
-- **Comprehensive Reporting**: Detailed HTML reports with performance metrics
+- **Interactive Charts**: Generate profit charts for both in-sample and out-of-sample periods
+- **Comprehensive Reporting**: Detailed HTML reports with performance metrics and chart links
 - **Docker Support**: Full containerized environment for consistent testing
 
 ## Requirements
@@ -70,13 +72,24 @@ docker-compose run --rm freqtrade download-data --exchange binance --pairs BTC/U
 
 ```bash
 # ❌ Wrong - may create data gaps
-docker-compose run --rm freqtrade download-data --days 1000
+docker-compose run --rm freqtrade download-data --pairs BTC/USDT:USDT --days 1000
 
 # ✅ Correct - ensures complete historical coverage
-docker-compose run --rm freqtrade download-data --days 1000 --erase
+docker-compose run --rm freqtrade download-data --pairs BTC/USDT:USDT --days 1000 --erase
 ```
 
 If your walk forward test fails with "ValueError: min() iterable argument is empty", check that your data covers the required date ranges for all walks.
+
+### Multi-Asset Data Download
+
+Walk forward testing automatically downloads missing data for the specified pair. Ensure the pair is in your config.json whitelist:
+
+```bash
+# The system will automatically download data for the specified pair
+python3 walk_forward_test.py --pair SOL/USDT:USDT --insample-days 30 --outsample-days 15 --num-walks 3
+```
+
+**Config Validation**: The system validates that `--pair` exists in your `config.json` pair_whitelist before proceeding and provides helpful error messages with configuration examples if not found.
 
 ## Usage
 
@@ -100,7 +113,7 @@ The walk forward test automatically performs hyperopt optimization followed by b
 
 #### Basic Usage
 ```bash
-python3 walk_forward_test.py --insample-days 30 --outsample-days 15 --num-walks 3
+python3 walk_forward_test.py --insample-days 30 --outsample-days 15 --num-walks 3 --pair BTC/USDT:USDT
 ```
 
 #### Strategy Examples
@@ -114,6 +127,7 @@ python3 walk_forward_test.py \
     --epochs 400 \
     --strategy QFLRSI_Strategy \
     --spaces buy sell \
+    --pair BTC/USDT:USDT \
     --generate-report
 ```
 
@@ -126,6 +140,28 @@ python3 walk_forward_test.py \
     --epochs 400 \
     --strategy QFL_Strategy_SLTP \
     --spaces buy roi stoploss \
+    --pair BTC/USDT:USDT \
+    --generate-report
+```
+
+**Multi-Asset Examples**
+```bash
+# Test SOL/USDT:USDT perpetuals
+python3 walk_forward_test.py \
+    --insample-days 30 \
+    --outsample-days 15 \
+    --num-walks 3 \
+    --strategy QFLRSI_Strategy \
+    --pair SOL/USDT:USDT \
+    --generate-report
+
+# Test DOGE/USDT:USDT perpetuals
+python3 walk_forward_test.py \
+    --insample-days 30 \
+    --outsample-days 15 \
+    --num-walks 3 \
+    --strategy QFLRSI_Strategy \
+    --pair DOGE/USDT:USDT \
     --generate-report
 ```
 
@@ -136,6 +172,7 @@ python3 walk_forward_test.py \
 docker-compose run --rm freqtrade backtesting \
     --config user_data/config.json \
     --strategy QFLRSI_Strategy \
+    --pairs BTC/USDT:USDT \
     --timeframe 1h \
     --timerange 20250609- \
     --export trades
@@ -146,6 +183,7 @@ docker-compose run --rm freqtrade backtesting \
 docker-compose run --rm freqtrade hyperopt \
     --config user_data/config.json \
     --strategy QFLRSI_Strategy \
+    --pairs BTC/USDT:USDT \
     --hyperopt-loss SharpeHyperOptLoss \
     --spaces buy sell \
     --epochs 200 \
@@ -216,6 +254,7 @@ Clean all results directories before starting fresh tests:
 This script safely removes all files from:
 - `user_data/backtest_results/` - Backtest result files
 - `user_data/hyperopt_results/` - Hyperopt optimization files  
+- `user_data/plot/` - Generated chart files
 - `walk_forward_results/` - Walk forward analysis results
 
 ## Contributing

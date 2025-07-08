@@ -92,10 +92,75 @@ class WalkForwardTester:
             
         return reversed(windows)  # Process chronologically
     
-    def validate_data_availability(self):
-        """Check if data is available for the required timerange"""
-        print(f"Validating data availability for {self.pair}...")
-        # This could be enhanced to actually check data files
+    def validate_pair_in_config(self):
+        """Validate that the specified pair is in the config whitelist"""
+        try:
+            with open(self.config, 'r') as f:
+                config = json.load(f)
+            
+            whitelist = config.get('exchange', {}).get('pair_whitelist', [])
+            
+            if self.pair not in whitelist:
+                print(f"❌ ERROR: Pair '{self.pair}' is not in the config whitelist.")
+                print(f"📝 Current whitelist in {self.config}: {whitelist}")
+                print(f"🔧 Please add '{self.pair}' to the 'pair_whitelist' in {self.config}")
+                print(f"📋 Example configuration:")
+                print(f'   "pair_whitelist": [')
+                for pair in whitelist:
+                    print(f'       "{pair}",')
+                print(f'       "{self.pair}"')
+                print(f'   ]')
+                return False
+            
+            print(f"✅ Pair '{self.pair}' found in config whitelist")
+            return True
+            
+        except FileNotFoundError:
+            print(f"❌ ERROR: Config file not found: {self.config}")
+            return False
+        except json.JSONDecodeError:
+            print(f"❌ ERROR: Invalid JSON in config file: {self.config}")
+            return False
+        except Exception as e:
+            print(f"❌ ERROR: Failed to validate config: {e}")
+            return False
+    
+    def download_required_data(self):
+        """Download required data for the specified pair and timerange"""
+        # Calculate total days needed for all walks plus buffer
+        total_days = (self.insample_days + self.outsample_days) * self.num_walks + 30
+        
+        print(f"📥 Ensuring data availability for {self.pair} ({total_days} days)...")
+        
+        download_cmd = [
+            "docker-compose", "run", "--rm", "freqtrade", "download-data",
+            "--exchange", "bybit",
+            "--pairs", self.pair,
+            "--timeframes", "1h",
+            "--days", str(total_days),
+            "--trading-mode", "futures"
+        ]
+        
+        try:
+            result = subprocess.run(download_cmd, check=True, capture_output=True, text=True)
+            print(f"✅ Data download completed for {self.pair}")
+            return True
+        except subprocess.CalledProcessError as e:
+            print(f"❌ ERROR: Failed to download data for {self.pair}: {e}")
+            if e.stderr:
+                print(f"Error details: {e.stderr}")
+            return False
+    
+    def ensure_data_and_config(self):
+        """Validate config and ensure data availability"""
+        # 1. Validate pair is in config whitelist
+        if not self.validate_pair_in_config():
+            return False
+        
+        # 2. Download required data (lazy - only missing data)
+        if not self.download_required_data():
+            return False
+        
         return True
     
     def collect_hyperopt_results(self, walk_num):
@@ -149,7 +214,7 @@ class WalkForwardTester:
             print(f"Failed to parse hyperopt JSON for walk {walk_num}: {e}")
             return None
     
-    def generate_charts_for_walk(self, walk_num, hyperopt_start, hyperopt_end, backtest_start, backtest_end):
+    def generate_charts_for_walk(self, walk_num, hyperopt_start, hyperopt_end, backtest_start, backtest_end, backtest_filename=None):
         """Generate profit charts for both IS and OOS periods"""
         print(f"Generating charts for walk {walk_num}...")
         
@@ -161,9 +226,9 @@ class WalkForwardTester:
         if is_chart_success:
             self.copy_chart_to_results_dir(walk_num, "IS")
         
-        # Generate OOS period chart (use existing backtest results)
+        # Generate OOS period chart (use specific backtest file if available)
         oos_timerange = f"{self.format_date(backtest_start)}-{self.format_date(backtest_end)}"
-        oos_chart_success = self.generate_oos_chart_from_existing_backtest(walk_num, oos_timerange, "OOS")
+        oos_chart_success = self.generate_oos_chart_from_specific_backtest(walk_num, oos_timerange, "OOS", backtest_filename)
         
         # Copy OOS chart with specific naming
         if oos_chart_success:
@@ -183,6 +248,7 @@ class WalkForwardTester:
                 "--strategy", self.strategy,
                 "--timeframe", "1h",
                 "--timerange", timerange,
+                "--pairs", self.pair,
                 "--export", "trades"
             ]
             
@@ -196,7 +262,8 @@ class WalkForwardTester:
                 "--config", self.config,
                 "--strategy", self.strategy,
                 "--timeframe", "1h",
-                "--timerange", timerange
+                "--timerange", timerange,
+                "--pairs", self.pair
             ]
             
             print(f"Generating {period_type} chart for walk {walk_num}, timerange: {timerange}")
@@ -219,16 +286,53 @@ class WalkForwardTester:
     def generate_oos_chart_from_existing_backtest(self, walk_num, timerange, period_type):
         """Generate OOS chart from existing backtest results"""
         try:
-            # Use the existing backtest result to generate the chart
+            # Use the existing backtest result to generate the chart for the specific timerange
             chart_cmd = [
                 "docker-compose", "run", "--rm", "freqtrade", "plot-profit",
                 "--config", self.config,
                 "--strategy", self.strategy,
-                "--timeframe", "1h"
-                # Don't specify timerange - use the most recent backtest result
+                "--timeframe", "1h",
+                "--timerange", timerange,
+                "--pairs", self.pair
             ]
             
             print(f"Generating {period_type} chart for walk {walk_num} using existing backtest results")
+            chart_result = subprocess.run(chart_cmd, check=True, capture_output=True, text=True)
+            print(f"{period_type} chart generated successfully for walk {walk_num}")
+            return True
+            
+        except subprocess.CalledProcessError as e:
+            print(f"Failed to generate {period_type} chart for walk {walk_num}: {e}")
+            # Check if the error is due to no trades available
+            if "KeyError: 'pair'" in str(e.stderr) or "No trades found" in str(e.stderr):
+                print(f"No trades available for {period_type} period in walk {walk_num} - this is normal for some periods")
+            else:
+                print(f"Error output: {e.stderr}")
+            return False
+        except Exception as e:
+            print(f"Exception while generating {period_type} chart for walk {walk_num}: {e}")
+            return False
+    
+    def generate_oos_chart_from_specific_backtest(self, walk_num, timerange, period_type, backtest_filename=None):
+        """Generate OOS chart from specific backtest file"""
+        try:
+            # Build the plot-profit command
+            chart_cmd = [
+                "docker-compose", "run", "--rm", "freqtrade", "plot-profit",
+                "--config", self.config,
+                "--strategy", self.strategy,
+                "--timeframe", "1h",
+                "--timerange", timerange,
+                "--pairs", self.pair
+            ]
+            
+            # Add specific backtest file if available
+            if backtest_filename:
+                chart_cmd.extend(["--export-filename", backtest_filename])
+                print(f"Generating {period_type} chart for walk {walk_num} using backtest file: {backtest_filename}")
+            else:
+                print(f"Generating {period_type} chart for walk {walk_num} using most recent backtest")
+            
             chart_result = subprocess.run(chart_cmd, check=True, capture_output=True, text=True)
             print(f"{period_type} chart generated successfully for walk {walk_num}")
             return True
@@ -253,7 +357,8 @@ class WalkForwardTester:
                 "--config", self.config,
                 "--strategy", self.strategy,
                 "--timeframe", "1h",
-                "--timerange", timerange
+                "--timerange", timerange,
+                "--pairs", self.pair
             ]
             
             print(f"Generating {period_type} chart for walk {walk_num}, timerange: {timerange}")
@@ -606,6 +711,7 @@ class WalkForwardTester:
             "--epochs", str(self.epochs),
             "--timeframe", "1h",
             "--timerange", timerange,
+            "--pairs", self.pair,
             "-j", "-1"
         ]
         
@@ -631,20 +737,62 @@ class WalkForwardTester:
             "--strategy", self.strategy,
             "--timeframe", "1h",
             "--timerange", timerange,
+            "--pairs", self.pair,
             "--export", "trades"
         ]
         
         print(f"Walk {walk_num}: Running backtest for {timerange}")
         print(f"Command: {' '.join(cmd)}")
         
+        # Get timestamp before running backtest to find the created file
+        import time
+        pre_backtest_time = time.time()
+        
         try:
             result = subprocess.run(cmd, check=True, capture_output=True, text=True)
             print(f"Backtest completed successfully for walk {walk_num}")
-            return True
+            
+            # Find the backtest file that was just created
+            backtest_file = self.find_latest_backtest_file(pre_backtest_time)
+            if backtest_file:
+                print(f"Backtest file created: {backtest_file}")
+                return backtest_file
+            else:
+                print(f"Warning: Could not find backtest file for walk {walk_num}")
+                return True
+                
         except subprocess.CalledProcessError as e:
             print(f"Backtest failed for walk {walk_num}: {e}")
             print(f"Error output: {e.stderr}")
             return False
+    
+    def find_latest_backtest_file(self, after_time):
+        """Find the most recent backtest file created after the specified time"""
+        import os
+        import glob
+        
+        backtest_dir = Path("user_data/backtest_results")
+        if not backtest_dir.exists():
+            return None
+            
+        # Find all .zip files in the backtest results directory
+        pattern = str(backtest_dir / "backtest-result-*.zip")
+        files = glob.glob(pattern)
+        
+        if not files:
+            return None
+            
+        # Filter files created after the specified time and get the most recent
+        recent_files = []
+        for file in files:
+            if os.path.getmtime(file) > after_time:
+                recent_files.append(file)
+        
+        if not recent_files:
+            return None
+            
+        # Return the most recent file
+        return max(recent_files, key=os.path.getmtime)
     
     def run_walk_forward_test(self):
         """Execute the complete walk forward test"""
@@ -656,8 +804,8 @@ class WalkForwardTester:
         print(f"- Strategy: {self.strategy}")
         print(f"- Pair: {self.pair}")
         
-        if not self.validate_data_availability():
-            print("Data validation failed. Exiting.")
+        if not self.ensure_data_and_config():
+            print("Configuration validation or data download failed. Exiting.")
             return False
         
         self.clean_backtest_results()
@@ -701,9 +849,14 @@ class WalkForwardTester:
                 walk_data['best_params'] = hyperopt_data.get('params', {})
             
             # Run backtest
-            if not self.run_backtest(window['backtest_start'], window['backtest_end'], window['walk']):
+            backtest_result = self.run_backtest(window['backtest_start'], window['backtest_end'], window['walk'])
+            if not backtest_result:
                 print(f"Stopping due to backtest failure in walk {window['walk']}")
                 return False
+            
+            # Store backtest filename if available
+            backtest_filename = backtest_result if isinstance(backtest_result, str) else None
+            walk_data['backtest_filename'] = backtest_filename
             
             # Collect backtest results
             backtest_data = self.collect_backtest_results(window['walk'])
@@ -736,7 +889,8 @@ class WalkForwardTester:
                 window['hyperopt_start'], 
                 window['hyperopt_end'],
                 window['backtest_start'], 
-                window['backtest_end']
+                window['backtest_end'],
+                backtest_filename
             )
             
             # Store chart generation status
