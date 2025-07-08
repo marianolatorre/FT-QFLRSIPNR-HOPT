@@ -149,6 +149,157 @@ class WalkForwardTester:
             print(f"Failed to parse hyperopt JSON for walk {walk_num}: {e}")
             return None
     
+    def generate_charts_for_walk(self, walk_num, hyperopt_start, hyperopt_end, backtest_start, backtest_end):
+        """Generate profit charts for both IS and OOS periods"""
+        print(f"Generating charts for walk {walk_num}...")
+        
+        # Generate IS period chart (need to run backtest for IS period first)
+        is_timerange = f"{self.format_date(hyperopt_start)}-{self.format_date(hyperopt_end)}"
+        is_chart_success = self.generate_is_chart_for_period(walk_num, hyperopt_start, hyperopt_end, "IS")
+        
+        # Copy IS chart with specific naming
+        if is_chart_success:
+            self.copy_chart_to_results_dir(walk_num, "IS")
+        
+        # Generate OOS period chart (use existing backtest results)
+        oos_timerange = f"{self.format_date(backtest_start)}-{self.format_date(backtest_end)}"
+        oos_chart_success = self.generate_oos_chart_from_existing_backtest(walk_num, oos_timerange, "OOS")
+        
+        # Copy OOS chart with specific naming
+        if oos_chart_success:
+            self.copy_chart_to_results_dir(walk_num, "OOS")
+        
+        return is_chart_success, oos_chart_success
+    
+    def generate_is_chart_for_period(self, walk_num, hyperopt_start, hyperopt_end, period_type):
+        """Generate IS chart by running backtest with optimized parameters for IS period"""
+        try:
+            # First run a backtest for the IS period using the optimized parameters
+            timerange = f"{self.format_date(hyperopt_start)}-{self.format_date(hyperopt_end)}"
+            
+            backtest_cmd = [
+                "docker-compose", "run", "--rm", "freqtrade", "backtesting",
+                "--config", self.config,
+                "--strategy", self.strategy,
+                "--timeframe", "1h",
+                "--timerange", timerange,
+                "--export", "trades"
+            ]
+            
+            print(f"Running backtest for {period_type} period chart in walk {walk_num}, timerange: {timerange}")
+            backtest_result = subprocess.run(backtest_cmd, check=True, capture_output=True, text=True)
+            print(f"Backtest for {period_type} period completed successfully")
+            
+            # Now generate the chart
+            chart_cmd = [
+                "docker-compose", "run", "--rm", "freqtrade", "plot-profit",
+                "--config", self.config,
+                "--strategy", self.strategy,
+                "--timeframe", "1h",
+                "--timerange", timerange
+            ]
+            
+            print(f"Generating {period_type} chart for walk {walk_num}, timerange: {timerange}")
+            chart_result = subprocess.run(chart_cmd, check=True, capture_output=True, text=True)
+            print(f"{period_type} chart generated successfully for walk {walk_num}")
+            return True
+            
+        except subprocess.CalledProcessError as e:
+            print(f"Failed to generate {period_type} chart for walk {walk_num}: {e}")
+            # Check if the error is due to no trades available
+            if "KeyError: 'pair'" in str(e.stderr) or "No trades found" in str(e.stderr):
+                print(f"No trades available for {period_type} period in walk {walk_num} - this is normal for some periods")
+            else:
+                print(f"Error output: {e.stderr}")
+            return False
+        except Exception as e:
+            print(f"Exception while generating {period_type} chart for walk {walk_num}: {e}")
+            return False
+    
+    def generate_oos_chart_from_existing_backtest(self, walk_num, timerange, period_type):
+        """Generate OOS chart from existing backtest results"""
+        try:
+            # Use the existing backtest result to generate the chart
+            chart_cmd = [
+                "docker-compose", "run", "--rm", "freqtrade", "plot-profit",
+                "--config", self.config,
+                "--strategy", self.strategy,
+                "--timeframe", "1h"
+                # Don't specify timerange - use the most recent backtest result
+            ]
+            
+            print(f"Generating {period_type} chart for walk {walk_num} using existing backtest results")
+            chart_result = subprocess.run(chart_cmd, check=True, capture_output=True, text=True)
+            print(f"{period_type} chart generated successfully for walk {walk_num}")
+            return True
+            
+        except subprocess.CalledProcessError as e:
+            print(f"Failed to generate {period_type} chart for walk {walk_num}: {e}")
+            # Check if the error is due to no trades available
+            if "KeyError: 'pair'" in str(e.stderr) or "No trades found" in str(e.stderr):
+                print(f"No trades available for {period_type} period in walk {walk_num} - this is normal for some periods")
+            else:
+                print(f"Error output: {e.stderr}")
+            return False
+        except Exception as e:
+            print(f"Exception while generating {period_type} chart for walk {walk_num}: {e}")
+            return False
+    
+    def generate_chart_for_period(self, walk_num, timerange, period_type):
+        """Generate a chart for a specific period (IS or OOS)"""
+        try:
+            cmd = [
+                "docker-compose", "run", "--rm", "freqtrade", "plot-profit",
+                "--config", self.config,
+                "--strategy", self.strategy,
+                "--timeframe", "1h",
+                "--timerange", timerange
+            ]
+            
+            print(f"Generating {period_type} chart for walk {walk_num}, timerange: {timerange}")
+            result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+            print(f"{period_type} chart generated successfully for walk {walk_num}")
+            return True
+            
+        except subprocess.CalledProcessError as e:
+            print(f"Failed to generate {period_type} chart for walk {walk_num}: {e}")
+            # Check if the error is due to no trades available (common for some periods)
+            if "KeyError: 'pair'" in str(e.stderr) or "No trades found" in str(e.stderr):
+                print(f"No trades available for {period_type} period in walk {walk_num} - this is normal for some periods")
+            else:
+                print(f"Error output: {e.stderr}")
+            return False
+        except Exception as e:
+            print(f"Exception while generating {period_type} chart for walk {walk_num}: {e}")
+            return False
+    
+    def copy_chart_to_results_dir(self, walk_num, period_type):
+        """Copy generated chart from plot/ to walk_forward_results directory with specific naming"""
+        try:
+            import shutil
+            
+            plot_dir = Path("user_data/plot")
+            if not plot_dir.exists():
+                print(f"Plot directory {plot_dir} does not exist")
+                return
+            
+            # Create charts subdirectory in walk forward results
+            charts_dir = self.wf_results_dir / "charts"
+            charts_dir.mkdir(exist_ok=True)
+            
+            # Copy profit plot (the main chart file)
+            profit_plot = plot_dir / "freqtrade-profit-plot.html"
+            if profit_plot.exists():
+                # Copy with walk and period specific naming
+                dest_file = charts_dir / f"walk_{walk_num}_{period_type}_chart.html"
+                shutil.copy2(profit_plot, dest_file)
+                print(f"Copied {period_type} profit chart to {dest_file}")
+            else:
+                print(f"Profit plot file not found: {profit_plot}")
+            
+        except Exception as e:
+            print(f"Failed to copy {period_type} chart for walk {walk_num}: {e}")
+
     def collect_backtest_results(self, walk_num):
         """Collect comprehensive backtest results using Freqtrade's analysis tools"""
         print(f"Collecting comprehensive backtest results for walk {walk_num}...")
@@ -577,6 +728,22 @@ class WalkForwardTester:
                 else:
                     walk_data['wfer'] = 0
                     walk_data['degradation'] = 0
+            
+            # Generate charts for this walk
+            print(f"Generating charts for walk {window['walk']}...")
+            is_chart_success, oos_chart_success = self.generate_charts_for_walk(
+                window['walk'], 
+                window['hyperopt_start'], 
+                window['hyperopt_end'],
+                window['backtest_start'], 
+                window['backtest_end']
+            )
+            
+            # Store chart generation status
+            walk_data['chart_generation'] = {
+                'is_chart_success': is_chart_success,
+                'oos_chart_success': oos_chart_success
+            }
             
             # Add walk data to results
             self.walk_forward_results['walks'].append(walk_data)

@@ -256,6 +256,21 @@ def generate_enhanced_html_report(walk_forward_results: Dict[str, Any], output_f
         param_data.update(extracted_params)
         param_evolution_data.append(param_data)
         
+        # Generate chart links for this walk
+        charts_available = walk.get('chart_generation', {})
+        is_chart_available = charts_available.get('is_chart_success', False)
+        oos_chart_available = charts_available.get('oos_chart_success', False)
+        
+        if is_chart_available:
+            is_chart_link = f'<a href="charts/walk_{walk_num}_IS_chart.html" target="_blank" style="color: #007bff; text-decoration: none; font-weight: bold;">📈 IS Chart</a>'
+        else:
+            is_chart_link = '<span style="color: #6c757d; font-style: italic;">No Chart</span>'
+            
+        if oos_chart_available:
+            oos_chart_link = f'<a href="charts/walk_{walk_num}_OOS_chart.html" target="_blank" style="color: #007bff; text-decoration: none; font-weight: bold;">📊 OOS Chart</a>'
+        else:
+            oos_chart_link = '<span style="color: #6c757d; font-style: italic;">No Chart</span>'
+        
         walk_analysis_rows += f"""
         <tr>
             <td style="font-weight: bold; text-align: center;">{walk_num}</td>
@@ -271,6 +286,8 @@ def generate_enhanced_html_report(walk_forward_results: Dict[str, Any], output_f
             <td>{oos_profit_factor}</td>
             <td style="font-weight: bold; {'color: #28a745;' if 'N/A' not in efficiency_str and float(efficiency_str) > 0.5 else 'color: #dc3545;'}">{efficiency_str}</td>
             <td style="font-weight: bold;">{status}</td>
+            <td style="text-align: center;">{is_chart_link}</td>
+            <td style="text-align: center;">{oos_chart_link}</td>
         </tr>
         """
     
@@ -788,12 +805,23 @@ def generate_enhanced_html_report(walk_forward_results: Dict[str, Any], output_f
                                 <th>OOS Profit Factor</th>
                                 <th>Efficiency</th>
                                 <th>Status</th>
+                                <th>IS Chart</th>
+                                <th>OOS Chart</th>
                             </tr>
                         </thead>
                         <tbody>
                             {walk_analysis_rows}
                         </tbody>
                     </table>
+                </div>
+                <div class="info-panel">
+                    <h3>Interactive Charts</h3>
+                    <p>Each walk includes interactive profit charts for both in-sample (IS) and out-of-sample (OOS) periods. These charts show:</p>
+                    <ul>
+                        <li><strong>IS Charts:</strong> Performance during hyperopt optimization period - shows how the strategy performed during parameter tuning</li>
+                        <li><strong>OOS Charts:</strong> Performance during validation period - shows real-world performance with optimized parameters</li>
+                        <li><strong>Interactive Features:</strong> Hover for trade details, zoom in/out, and detailed profit curves</li>
+                    </ul>
                 </div>
             </div>
             
