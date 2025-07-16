@@ -59,33 +59,46 @@ def detect_strategy_type(metadata: Dict[str, Any]) -> str:
         return 'UNKNOWN'
 
 
-def get_strategy_parameter_config(strategy_type: str) -> Dict[str, Any]:
-    """Get parameter configuration for different strategy types"""
-    if strategy_type == 'QFLRSI':
-        return {
-            'headers': ['Walk', 'RSI Entry Percentile', 'RSI Exit Percentile', 'ATR Multiplier', 'ATR Period', 'Volume MA Period'],
-            'params': ['rsi_entry_percentile', 'rsi_exit_percentile', 'atr_multiplier', 'atr_period', 'volume_ma_period'],
-            'formats': ['{:.0f}', '{:.3f}', '{:.3f}', '{:.1f}', '{:.0f}', '{:.0f}']
-        }
-    elif strategy_type == 'QFL_SLTP':
-        return {
-            'headers': ['Walk', 'Volume MA Period', 'Buy Percentage', 'Max Base Age', 'ROI 0', 'ROI Final', 'Stoploss'],
-            'params': ['volume_ma_period', 'buy_percentage', 'max_base_age', 'roi_0', 'roi_final', 'stoploss'],
-            'formats': ['{:.0f}', '{:.0f}', '{:.3f}', '{:.3f}', '{:.3f}', '{:.3f}']
-        }
-    else:
-        # Fallback for unknown strategies - show all available parameters
-        return {
-            'headers': ['Walk', 'Volume MA Period', 'Buy Percentage', 'Max Base Age', 'RSI Entry', 'RSI Exit', 'ATR Multiplier', 'ROI 0', 'Stoploss'],
-            'params': ['volume_ma_period', 'buy_percentage', 'max_base_age', 'rsi_entry_percentile', 'rsi_exit_percentile', 'atr_multiplier', 'roi_0', 'stoploss'],
-            'formats': ['{:.0f}', '{:.0f}', '{:.3f}', '{:.0f}', '{:.3f}', '{:.3f}', '{:.1f}', '{:.3f}', '{:.3f}']
-        }
+def get_strategy_parameter_config(walks: List[Dict]) -> Dict[str, Any]:
+    """Dynamically determine parameter configuration from actual hyperopt results"""
+    # Collect all unique parameter names from all walks
+    all_params = set()
+    
+    for walk in walks:
+        hyperopt_results = walk.get('hyperopt_results')
+        if hyperopt_results and hyperopt_results.get('params', {}).get('params'):
+            params = hyperopt_results['params']['params']
+            all_params.update(params.keys())
+    
+    # Convert to sorted list for consistent ordering
+    sorted_params = sorted(all_params)
+    
+    # Create headers from parameter names (make them human-readable)
+    headers = ['Walk'] + [param.replace('_', ' ').title() for param in sorted_params]
+    
+    # Determine format based on parameter name patterns
+    formats = []
+    for param in sorted_params:
+        if 'period' in param or 'epoch' in param:
+            formats.append('{:.0f}')  # Integer format
+        elif 'slope' in param or 'threshold' in param or 'factor' in param:
+            formats.append('{:.5f}')  # High precision decimal
+        elif 'percentage' in param or 'ratio' in param:
+            formats.append('{:.3f}')  # 3 decimal places
+        else:
+            formats.append('{:.3f}')  # Default 3 decimal places
+    
+    return {
+        'headers': headers,
+        'params': sorted_params,
+        'formats': formats
+    }
 
 
-def extract_strategy_parameters(hyperopt_results: Dict[str, Any], strategy_type: str) -> Dict[str, Any]:
-    """Extract strategy parameters based on strategy type"""
+def extract_strategy_parameters(hyperopt_results: Dict[str, Any], param_names: List[str]) -> Dict[str, Any]:
+    """Extract strategy parameters dynamically based on available parameter names"""
     if not hyperopt_results:
-        return {}
+        return {param: 0 for param in param_names}
     
     params = hyperopt_results.get('params', {}).get('params', {})
     roi_data = hyperopt_results.get('params', {}).get('minimal_roi', {})
@@ -93,38 +106,35 @@ def extract_strategy_parameters(hyperopt_results: Dict[str, Any], strategy_type:
     
     extracted = {}
     
-    # Extract buy space parameters
-    extracted['volume_ma_period'] = params.get('volume_ma_period', 0)
-    extracted['buy_percentage'] = params.get('buy_percentage', 0)
-    extracted['max_base_age'] = params.get('max_base_age', 0)
-    extracted['rsi_entry_percentile'] = params.get('rsi_entry_percentile', 0)
-    extracted['rsi_exit_percentile'] = params.get('rsi_exit_percentile', 0)
-    extracted['atr_multiplier'] = params.get('atr_multiplier', 0)
-    extracted['atr_period'] = params.get('atr_period', 0)
-    
-    # Extract ROI parameters
-    if roi_data:
-        roi_values = sorted(roi_data.items(), key=lambda x: int(x[0]))
-        extracted['roi_0'] = roi_values[0][1] if roi_values else 0  # First ROI value (immediate)
-        extracted['roi_final'] = roi_values[-1][1] if roi_values else 0  # Final ROI value (usually 0)
-    else:
-        extracted['roi_0'] = 0
-        extracted['roi_final'] = 0
-    
-    # Extract stoploss
-    extracted['stoploss'] = stoploss_data
+    # Extract all available parameters dynamically
+    for param_name in param_names:
+        if param_name in params:
+            extracted[param_name] = params[param_name]
+        elif param_name == 'stoploss':
+            extracted[param_name] = stoploss_data
+        elif param_name == 'roi_0' and roi_data:
+            roi_values = sorted(roi_data.items(), key=lambda x: int(x[0]))
+            extracted[param_name] = roi_values[0][1] if roi_values else 0
+        elif param_name == 'roi_final' and roi_data:
+            roi_values = sorted(roi_data.items(), key=lambda x: int(x[0]))
+            extracted[param_name] = roi_values[-1][1] if roi_values else 0
+        else:
+            extracted[param_name] = 0
     
     return extracted
 
 
 def calculate_walk_forward_efficiency_ratio(walks: List[Dict]) -> Dict[str, Any]:
-    """Calculate comprehensive WFER and related metrics"""
+    """Calculate comprehensive WFER and related metrics (excluding failed walks)"""
     is_profits = []
     oos_profits = []
     is_sharpes = []
     oos_sharpes = []
     
-    for walk in walks:
+    # Filter out failed walks
+    successful_walks = [walk for walk in walks if not walk.get('status', 'completed').startswith('failed')]
+    
+    for walk in successful_walks:
         # In-sample metrics from hyperopt
         hyperopt_results = walk.get('hyperopt_results')
         if hyperopt_results and hyperopt_results.get('raw_output'):
@@ -159,7 +169,9 @@ def calculate_walk_forward_efficiency_ratio(walks: List[Dict]) -> Dict[str, Any]
         'avg_is_sharpe': avg_is_sharpe,
         'avg_oos_sharpe': avg_oos_sharpe,
         'total_oos_profit': sum(oos_profits),
-        'profit_consistency': len([p for p in oos_profits if p > 0]) / len(oos_profits) if oos_profits else 0
+        'profit_consistency': len([p for p in oos_profits if p > 0]) / len(oos_profits) if oos_profits else 0,
+        'successful_walks': len(successful_walks),
+        'total_walks': len(walks)
     }
 
 
@@ -174,8 +186,28 @@ def generate_enhanced_html_report(walk_forward_results: Dict[str, Any], output_f
     wfer_metrics = calculate_walk_forward_efficiency_ratio(walks)
     wfer = wfer_metrics['wfer']
     
-    # Generate overall rating
-    if wfer > 0.7 and wfer_metrics['profit_consistency'] > 0.6:
+    # Calculate failure statistics
+    successful_walks = [walk for walk in walks if not walk.get('status', 'completed').startswith('failed')]
+    failed_walks = [walk for walk in walks if walk.get('status', 'completed').startswith('failed')]
+    failed_count = len(failed_walks)
+    total_walks = len(walks)
+    success_rate = ((total_walks - failed_count) / total_walks * 100) if total_walks > 0 else 0
+    
+    # Generate overall rating (considering failure rate)
+    failure_rate = failed_count / len(walks) if len(walks) > 0 else 0
+    
+    # Downgrade rating if there are too many failures
+    if failure_rate > 0.3:  # More than 30% failure rate
+        rating = "RED"
+        rating_class = "red"
+        recommendation = "Do not deploy - High failure rate"
+        confidence_level = "Very Low"
+    elif failure_rate > 0.1:  # More than 10% failure rate
+        rating = "YELLOW"
+        rating_class = "yellow"
+        recommendation = "Deploy with extreme caution - Some walks failed"
+        confidence_level = "Low"
+    elif wfer > 0.7 and wfer_metrics['profit_consistency'] > 0.6:
         rating = "GREEN"
         rating_class = "green"
         recommendation = "Deploy with confidence"
@@ -191,100 +223,154 @@ def generate_enhanced_html_report(walk_forward_results: Dict[str, Any], output_f
         recommendation = "Do not deploy"
         confidence_level = "Low"
     
-    # Detect strategy type and get parameter configuration
-    strategy_type = detect_strategy_type(metadata)
-    param_config = get_strategy_parameter_config(strategy_type)
+    # Dynamically determine parameter configuration from hyperopt results
+    param_config = get_strategy_parameter_config(walks)
     
     # Generate walk analysis rows
     walk_analysis_rows = ""
     param_evolution_data = []
+    cumulative_pnl_data = []  # For cumulative PnL chart
     
     for walk in walks:
         walk_num = walk.get('walk_num', 'N/A')
         is_period = f"{walk.get('is_period', {}).get('start', 'N/A')} to {walk.get('is_period', {}).get('end', 'N/A')}"
         oos_period = f"{walk.get('oos_period', {}).get('start', 'N/A')} to {walk.get('oos_period', {}).get('end', 'N/A')}"
         
-        # Extract hyperopt metrics
-        hyperopt_results = walk.get('hyperopt_results')
-        if hyperopt_results and hyperopt_results.get('raw_output'):
-            is_metrics = extract_metrics_from_raw_output(hyperopt_results['raw_output'])
-            is_profit = f"{is_metrics.get('total_profit_pct', 0):.2f}%"
-            is_sharpe = f"{is_metrics.get('sharpe', 0):.2f}"
-            is_trades = int(is_metrics.get('total_trades', 0))
-            is_drawdown = f"{is_metrics.get('max_drawdown', 0):.2f}%"
-        else:
-            is_profit = "N/A"
-            is_sharpe = "N/A"
-            is_trades = "N/A"
-            is_drawdown = "N/A"
+        # Check if walk failed
+        walk_status = walk.get('status', 'completed')
+        failure_reason = walk.get('failure_reason', '')
         
-        # Extract backtest metrics
-        backtest_results = walk.get('backtest_results')
-        if backtest_results:
-            metrics = backtest_results.get('comprehensive_metrics', {})
-            oos_profit = f"{metrics.get('total_profit_pct', 0):.2f}%" if metrics.get('total_profit_pct') else "0.00%"
-            oos_trades = len(backtest_results.get('trades', []))
-            oos_win_rate = f"{metrics.get('win_rate', 0):.1f}%"
-            oos_profit_factor = f"{metrics.get('profit_factor', 0):.2f}"
+        if walk_status.startswith('failed'):
+            # Handle failed walks with red warning
+            is_profit = "❌ FAILED"
+            is_sharpe = "❌ FAILED"
+            is_trades = "❌ FAILED"
+            is_drawdown = "❌ FAILED"
+            oos_profit = "❌ FAILED"
+            oos_trades = "❌ FAILED"
+            oos_win_rate = "❌ FAILED"
+            oos_profit_factor = "❌ FAILED"
+            efficiency_str = "❌ FAILED"
+            status = f"🚨 FAILED: {failure_reason}"
             
-            # Calculate efficiency for this walk
-            is_val = is_metrics.get('total_profit_pct', 0) if 'is_metrics' in locals() else 0
-            oos_val = metrics.get('total_profit_pct', 0) if metrics.get('total_profit_pct') else 0
-            efficiency = oos_val / is_val if is_val != 0 else 0
-            efficiency_str = f"{efficiency:.2f}"
+            # Extract strategy parameters for failed walks (if available)
+            extracted_params = {}
+            if walk.get('hyperopt_results'):
+                extracted_params = extract_strategy_parameters(walk.get('hyperopt_results'), param_config['params'])
+            param_data = {'walk': walk_num}
+            param_data.update(extracted_params)
+            param_evolution_data.append(param_data)
             
-            # Status based on efficiency
-            if efficiency > 0.7:
-                status = "🟢 Excellent"
-            elif efficiency > 0.5:
-                status = "🟡 Good"
-            elif efficiency > 0.3:
-                status = "🟠 Caution"
+            # Add zero profit for failed walks
+            cumulative_pnl_data.append({
+                'walk': walk_num,
+                'profit_pct': 0,
+                'period': oos_period
+            })
+            
+            # No charts for failed walks
+            is_chart_link = '<span style="color: #dc3545; font-weight: bold;">❌ FAILED</span>'
+            oos_chart_link = '<span style="color: #dc3545; font-weight: bold;">❌ FAILED</span>'
+            
+        else:
+            # Handle successful walks
+            # Extract hyperopt metrics
+            hyperopt_results = walk.get('hyperopt_results')
+            if hyperopt_results and hyperopt_results.get('raw_output'):
+                is_metrics = extract_metrics_from_raw_output(hyperopt_results['raw_output'])
+                is_profit = f"{is_metrics.get('total_profit_pct', 0):.2f}%"
+                is_sharpe = f"{is_metrics.get('sharpe', 0):.2f}"
+                is_trades = int(is_metrics.get('total_trades', 0))
+                is_drawdown = f"{is_metrics.get('max_drawdown', 0):.2f}%"
             else:
-                status = "🔴 Poor"
-        else:
-            oos_profit = "N/A"
-            oos_trades = "N/A"
-            oos_win_rate = "N/A"
-            oos_profit_factor = "N/A"
-            efficiency_str = "N/A"
-            status = "❌ No Data"
-        
-        # Extract strategy parameters dynamically
-        extracted_params = extract_strategy_parameters(hyperopt_results, strategy_type)
-        param_data = {'walk': walk_num}
-        param_data.update(extracted_params)
-        param_evolution_data.append(param_data)
-        
-        # Generate chart links for this walk
-        charts_available = walk.get('chart_generation', {})
-        is_chart_available = charts_available.get('is_chart_success', False)
-        oos_chart_available = charts_available.get('oos_chart_success', False)
-        
-        if is_chart_available:
-            is_chart_link = f'<a href="charts/walk_{walk_num}_IS_chart.html" target="_blank" style="color: #007bff; text-decoration: none; font-weight: bold;">📈 IS Chart</a>'
-        else:
-            is_chart_link = '<span style="color: #6c757d; font-style: italic;">No Chart</span>'
+                is_profit = "N/A"
+                is_sharpe = "N/A"
+                is_trades = "N/A"
+                is_drawdown = "N/A"
             
-        if oos_chart_available:
-            oos_chart_link = f'<a href="charts/walk_{walk_num}_OOS_chart.html" target="_blank" style="color: #007bff; text-decoration: none; font-weight: bold;">📊 OOS Chart</a>'
+            # Extract backtest metrics
+            backtest_results = walk.get('backtest_results')
+            if backtest_results:
+                metrics = backtest_results.get('comprehensive_metrics', {})
+                oos_profit_pct = metrics.get('total_profit_pct', 0) if metrics.get('total_profit_pct') else 0
+                oos_profit = f"{oos_profit_pct:.2f}%"
+                oos_trades = len(backtest_results.get('trades', []))
+                oos_win_rate = f"{metrics.get('win_rate', 0):.1f}%"
+                oos_profit_factor = f"{metrics.get('profit_factor', 0):.2f}"
+                
+                # Add to cumulative PnL data
+                cumulative_pnl_data.append({
+                    'walk': walk_num,
+                    'profit_pct': oos_profit_pct,
+                    'period': oos_period
+                })
+                
+                
+                # Calculate efficiency for this walk
+                is_val = is_metrics.get('total_profit_pct', 0) if 'is_metrics' in locals() else 0
+                oos_val = oos_profit_pct
+                efficiency = oos_val / is_val if is_val != 0 else 0
+                efficiency_str = f"{efficiency:.2f}"
+                
+                # Status based on efficiency
+                if efficiency > 0.7:
+                    status = "🟢 Excellent"
+                elif efficiency > 0.5:
+                    status = "🟡 Good"
+                elif efficiency > 0.3:
+                    status = "🟠 Caution"
+                else:
+                    status = "🔴 Poor"
+            else:
+                oos_profit = "N/A"
+                oos_trades = "N/A"
+                oos_win_rate = "N/A"
+                oos_profit_factor = "N/A"
+                efficiency_str = "N/A"
+                status = "❌ No Data"
+            
+            # Extract strategy parameters dynamically
+            extracted_params = extract_strategy_parameters(hyperopt_results, param_config['params'])
+            param_data = {'walk': walk_num}
+            param_data.update(extracted_params)
+            param_evolution_data.append(param_data)
+            
+            # Generate chart links for successful walks
+            charts_available = walk.get('chart_generation', {})
+            is_chart_available = charts_available.get('is_chart_success', False)
+            oos_chart_available = charts_available.get('oos_chart_success', False)
+            
+            if is_chart_available:
+                is_chart_link = f'<a href="charts/walk_{walk_num}_IS_chart.html" target="_blank" style="color: #007bff; text-decoration: none; font-weight: bold;">📈 IS Chart</a>'
+            else:
+                is_chart_link = '<span style="color: #6c757d; font-style: italic;">No Chart</span>'
+                
+            if oos_chart_available:
+                oos_chart_link = f'<a href="charts/walk_{walk_num}_OOS_chart.html" target="_blank" style="color: #007bff; text-decoration: none; font-weight: bold;">📊 OOS Chart</a>'
+            else:
+                oos_chart_link = '<span style="color: #6c757d; font-style: italic;">No Chart</span>'
+        
+        
+        # Style rows based on failure status
+        if walk_status.startswith('failed'):
+            row_style = 'background-color: #f8d7da; border-left: 4px solid #dc3545;'
         else:
-            oos_chart_link = '<span style="color: #6c757d; font-style: italic;">No Chart</span>'
+            row_style = ''
         
         walk_analysis_rows += f"""
-        <tr>
+        <tr style="{row_style}">
             <td style="font-weight: bold; text-align: center;">{walk_num}</td>
             <td style="font-size: 12px;">{is_period}</td>
             <td style="font-size: 12px;">{oos_period}</td>
-            <td style="color: {'#28a745' if 'N/A' not in is_profit and float(is_profit.replace('%', '')) > 0 else '#dc3545'}; font-weight: bold;">{is_profit}</td>
+            <td style="color: {'#28a745' if 'N/A' not in is_profit and '❌' not in is_profit and float(is_profit.replace('%', '')) > 0 else '#dc3545'}; font-weight: bold;">{is_profit}</td>
             <td>{is_sharpe}</td>
             <td>{is_trades}</td>
             <td>{is_drawdown}</td>
-            <td style="color: {'#28a745' if 'N/A' not in oos_profit and float(oos_profit.replace('%', '')) > 0 else '#dc3545'}; font-weight: bold;">{oos_profit}</td>
+            <td style="color: {'#28a745' if 'N/A' not in oos_profit and '❌' not in oos_profit and float(oos_profit.replace('%', '')) > 0 else '#dc3545'}; font-weight: bold;">{oos_profit}</td>
             <td>{oos_trades}</td>
             <td>{oos_win_rate}</td>
             <td>{oos_profit_factor}</td>
-            <td style="font-weight: bold; {'color: #28a745;' if 'N/A' not in efficiency_str and float(efficiency_str) > 0.5 else 'color: #dc3545;'}">{efficiency_str}</td>
+            <td style="font-weight: bold; {'color: #28a745;' if 'N/A' not in efficiency_str and '❌' not in efficiency_str and float(efficiency_str) > 0.5 else 'color: #dc3545;'}">{efficiency_str}</td>
             <td style="font-weight: bold;">{status}</td>
             <td style="text-align: center;">{is_chart_link}</td>
             <td style="text-align: center;">{oos_chart_link}</td>
@@ -294,15 +380,32 @@ def generate_enhanced_html_report(walk_forward_results: Dict[str, Any], output_f
     # Generate strategy parameters evolution table dynamically
     param_evolution_rows = ""
     for params in param_evolution_data:
+        walk_num = params['walk']
+        
+        # Find the walk to check if it failed
+        walk_failed = False
+        for walk in walks:
+            if walk.get('walk_num') == walk_num:
+                walk_failed = walk.get('status', 'completed').startswith('failed')
+                break
+        
+        # Style failed walks
+        row_style = 'background-color: #f8d7da; border-left: 4px solid #dc3545;' if walk_failed else ''
+        
         row = f"""
-        <tr>
-            <td style="font-weight: bold; text-align: center;">{params['walk']}</td>"""
+        <tr style="{row_style}">
+            <td style="font-weight: bold; text-align: center;">{walk_num}</td>"""
         
         # Add parameter values based on configuration
         for i, param_name in enumerate(param_config['params']):
             value = params.get(param_name, 0)
             format_str = param_config['formats'][i]
-            formatted_value = format_str.format(value)
+            
+            if walk_failed:
+                formatted_value = "❌ FAILED"
+            else:
+                formatted_value = format_str.format(value)
+            
             row += f"""
             <td>{formatted_value}</td>"""
         
@@ -311,13 +414,13 @@ def generate_enhanced_html_report(walk_forward_results: Dict[str, Any], output_f
         """
         param_evolution_rows += row
     
-    # Calculate summary statistics
-    total_trades = sum(len(walk.get('backtest_results', {}).get('trades', [])) for walk in walks)
-    total_profit = sum(walk.get('backtest_results', {}).get('comprehensive_metrics', {}).get('total_profit_abs', 0) for walk in walks)
+    # Calculate summary statistics (exclude failed walks)
+    total_trades = sum(len(walk.get('backtest_results', {}).get('trades', [])) for walk in successful_walks)
+    total_profit = sum(walk.get('backtest_results', {}).get('comprehensive_metrics', {}).get('total_profit_abs', 0) for walk in successful_walks)
     
-    # Generate trade details
+    # Generate trade details (only for successful walks)
     trade_details = ""
-    for walk in walks:
+    for walk in successful_walks:
         trades = walk.get('backtest_results', {}).get('trades', [])
         for i, trade in enumerate(trades):
             profit_abs = trade.get('profit_abs', 0)
@@ -344,6 +447,19 @@ def generate_enhanced_html_report(walk_forward_results: Dict[str, Any], output_f
                 <td>{trade.get('exit_reason', 'N/A')}</td>
             </tr>
             """
+    
+    # Add failed walks summary to trade details
+    if failed_walks:
+        for walk in failed_walks:
+            trade_details += f"""
+            <tr style="background-color: #f8d7da; border-left: 4px solid #dc3545;">
+                <td>Walk {walk.get('walk_num', 'N/A')}</td>
+                <td colspan="8" style="color: #dc3545; font-weight: bold; text-align: center;">❌ FAILED: {walk.get('failure_reason', 'Unknown reason')}</td>
+            </tr>
+            """
+    
+    # Sort cumulative PnL data by walk number for chronological order
+    cumulative_pnl_data.sort(key=lambda x: x['walk'])
     
     # Generate HTML content
     html_content = f"""
@@ -736,6 +852,14 @@ def generate_enhanced_html_report(walk_forward_results: Dict[str, Any], output_f
                         <div class="metric-value">{len(walks)}</div>
                         <div class="metric-label">Walk Forward Periods</div>
                     </div>
+                    <div class="metric-card">
+                        <div class="metric-value">{failed_count}</div>
+                        <div class="metric-label">Failed Walks</div>
+                    </div>
+                    <div class="metric-card" style="{'border-left: 5px solid #dc3545;' if failed_count > 0 else 'border-left: 5px solid #28a745;'}">
+                        <div class="metric-value" style="{'color: #dc3545;' if failed_count > 0 else 'color: #28a745;'}">{success_rate:.1f}%</div>
+                        <div class="metric-label">Success Rate</div>
+                    </div>
                 </div>
             </div>
             
@@ -814,6 +938,22 @@ def generate_enhanced_html_report(walk_forward_results: Dict[str, Any], output_f
                         </tbody>
                     </table>
                 </div>
+                
+                <!-- Cumulative PnL Chart -->
+                <div class="section">
+                    <h3>📊 Cumulative PnL Evolution</h3>
+                    <div id="cumulativePnlChart" style="height: 400px; margin: 20px 0; border: 1px solid #e9ecef; border-radius: 8px; background: white;"></div>
+                    <div class="info-panel">
+                        <h4>Understanding the Cumulative PnL Chart</h4>
+                        <p>This chart shows the cumulative profit and loss across all walk forward periods, helping you visualize the strategy's overall performance trajectory over time.</p>
+                        <ul>
+                            <li><strong>X-axis:</strong> Walk number (chronological order)</li>
+                            <li><strong>Y-axis:</strong> Cumulative profit/loss percentage</li>
+                            <li><strong>Trend Analysis:</strong> Upward trend indicates consistent profitability, downward trend suggests losses</li>
+                        </ul>
+                    </div>
+                </div>
+                
                 <div class="info-panel">
                     <h3>Interactive Charts</h3>
                     <p>Each walk includes interactive profit charts for both in-sample (IS) and out-of-sample (OOS) periods. These charts show:</p>
@@ -847,6 +987,13 @@ def generate_enhanced_html_report(walk_forward_results: Dict[str, Any], output_f
             
             <div class="section">
                 <h2>📋 Individual Trade Analysis</h2>
+                {('<!-- Failed Walks Notice -->' if failed_count > 0 else '')}
+                {f'''
+                <div class="info-panel" style="background: linear-gradient(135deg, #fff3cd, #ffeaa7); border: 1px solid #ffc107; margin-bottom: 20px;">
+                    <h4 style="color: #856404; margin-bottom: 10px;">⚠️ Trade Data Notice</h4>
+                    <p style="color: #856404;">The trade analysis below includes only successful walks. {failed_count} failed walks are shown with failure reasons and are excluded from trade statistics.</p>
+                </div>
+                ''' if failed_count > 0 else ''}
                 <div style="overflow-x: auto;">
                     <table class="analysis-table">
                         <thead>
@@ -880,6 +1027,7 @@ def generate_enhanced_html_report(walk_forward_results: Dict[str, Any], output_f
                         <li><strong>WFER 0.3-0.5:</strong> Caution - Significant performance drop, review strategy robustness</li>
                         <li><strong>WFER < 0.3:</strong> Poor - Likely overfitting detected, do not deploy</li>
                     </ul>
+                    {f'<div style="margin-top: 15px; padding: 10px; background: rgba(220, 53, 69, 0.1); border-radius: 5px; border-left: 4px solid #dc3545;"><strong style="color: #721c24;">Note:</strong> WFER calculation excludes {failed_count} failed walks. High failure rates may indicate strategy instability or data quality issues.</div>' if failed_count > 0 else ''}
                 </div>
                 
                 <div class="info-panel">
@@ -896,6 +1044,7 @@ def generate_enhanced_html_report(walk_forward_results: Dict[str, Any], output_f
             <div class="highlight">
                 <h4>🎯 Key Insights for {metadata.get('strategy', 'Strategy')}</h4>
                 <p>This comprehensive walk forward analysis provides institutional-grade validation of your trading strategy. The {rating.lower()} rating is based on multiple factors including efficiency ratio, profit consistency, and parameter stability.</p>
+                {f'<div style="margin-top: 15px; padding: 10px; background: rgba(220, 53, 69, 0.1); border-radius: 5px; border-left: 4px solid #dc3545;"><strong style="color: #721c24;">Critical Warning:</strong> {failed_count} out of {total_walks} walks failed ({(failed_count/total_walks*100):.1f}% failure rate). This may indicate strategy instability, insufficient data, or parameter optimization issues. Consider investigating failed walks before deployment.</div>' if failed_count > 0 else ''}
             </div>
         </div>
         
@@ -906,7 +1055,97 @@ def generate_enhanced_html_report(walk_forward_results: Dict[str, Any], output_f
         </div>
     </div>
     
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
     <script>
+        // Cumulative PnL Chart Data
+        const cumulativePnlData = {json.dumps(cumulative_pnl_data)};
+        
+        function createCumulativePnlChart() {{
+            // Calculate cumulative PnL
+            let cumulativePnl = 0;
+            const walkNumbers = [];
+            const cumulativeValues = [];
+            const periods = [];
+            const colors = [];
+            
+            cumulativePnlData.forEach((data, index) => {{
+                cumulativePnl += data.profit_pct;
+                walkNumbers.push(data.walk);
+                cumulativeValues.push(cumulativePnl);
+                periods.push(data.period);
+                
+                // Color coding: green for positive, red for negative
+                colors.push(cumulativePnl >= 0 ? '#28a745' : '#dc3545');
+            }});
+            
+            const trace = {{
+                x: walkNumbers,
+                y: cumulativeValues,
+                mode: 'lines+markers',
+                type: 'scatter',
+                name: 'Cumulative PnL',
+                line: {{
+                    color: '#3498db',
+                    width: 3
+                }},
+                marker: {{
+                    size: 8,
+                    color: colors,
+                    line: {{
+                        color: '#ffffff',
+                        width: 2
+                    }}
+                }},
+                hovertemplate: '<b>Walk %{{x}}</b><br>' +
+                              'Cumulative PnL: %{{y:.2f}}%<br>' +
+                              'Period: %{{customdata}}<br>' +
+                              '<extra></extra>',
+                customdata: periods
+            }};
+            
+            const layout = {{
+                title: {{
+                    text: 'Cumulative PnL Evolution Across Walks',
+                    font: {{ size: 16, family: 'Arial, sans-serif' }}
+                }},
+                xaxis: {{
+                    title: 'Walk Number',
+                    showgrid: true,
+                    gridcolor: '#e9ecef',
+                    tickmode: 'linear',
+                    tick0: 1,
+                    dtick: 1
+                }},
+                yaxis: {{
+                    title: 'Cumulative PnL (%)',
+                    showgrid: true,
+                    gridcolor: '#e9ecef',
+                    zeroline: true,
+                    zerolinecolor: '#6c757d',
+                    zerolinewidth: 2
+                }},
+                plot_bgcolor: '#ffffff',
+                paper_bgcolor: '#ffffff',
+                margin: {{ l: 60, r: 30, t: 50, b: 60 }},
+                hovermode: 'closest',
+                showlegend: false
+            }};
+            
+            const config = {{
+                responsive: true,
+                displayModeBar: true,
+                modeBarButtonsToRemove: ['pan2d', 'select2d', 'lasso2d', 'autoScale2d', 'toggleHover'],
+                displaylogo: false
+            }};
+            
+            Plotly.newPlot('cumulativePnlChart', [trace], layout, config);
+        }}
+        
+        // Initialize chart when page loads
+        document.addEventListener('DOMContentLoaded', function() {{
+            createCumulativePnlChart();
+        }});
+        
         function copyToClipboard() {{
             const commandText = `{metadata.get('original_command', 'N/A')}`;
             const button = document.getElementById('copyBtn');
@@ -957,6 +1196,16 @@ def generate_enhanced_html_report(walk_forward_results: Dict[str, Any], output_f
         f.write(html_content)
     
     print(f"✅ Enhanced website-ready HTML report generated: {output_file}")
+    
+    # Open the report in the default browser
+    import subprocess
+    try:
+        subprocess.run(["open", str(output_file)], check=True)
+        print("📖 Report opened in default browser")
+    except subprocess.CalledProcessError:
+        print("❌ Failed to open report in browser")
+    except FileNotFoundError:
+        print("❌ 'open' command not found (macOS only)")
 
 
 if __name__ == "__main__":

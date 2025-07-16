@@ -1,0 +1,105 @@
+// @version=5
+strategy("Ornstein-Uhlenbeck Mean Reversion Strategy", shorttitle="OU Strategy", overlay=true)
+
+// =============================================================================
+// #region INPUTS
+// =============================================================================
+
+// --- Strategy Parameters ---
+var g_strategy = "Strategy Parameters"
+trade_direction = input.string("Both", "Trade Direction", options=["Long Only", "Short Only", "Both"], group=g_strategy)
+lookback_period = input.int(100, "Lookback Period", minval=10, group=g_strategy, tooltip="Number of bars to use for OU parameter estimation.")
+entry_threshold = input.float(2.0, "Entry Z-Score Threshold", minval=0.1, step=0.1, group=g_strategy, tooltip="The Z-score level to trigger a long/short entry.")
+exit_threshold = input.float(0.5, "Exit Z-Score Threshold", minval=0.0, step=0.1, group=g_strategy, tooltip="The Z-score level to trigger an exit (reversion to the mean).")
+stoploss_pct = input.float(10.0, "Stop Loss %", minval=0.1, step=0.1, group=g_strategy, tooltip="Stop loss percentage from the entry price.")
+
+// --- Plotting Parameters ---
+var g_plotting = "Plotting"
+show_price_bands = input.bool(true, "Show Price Bands", group=g_plotting)
+show_zscore_levels = input.bool(true, "Show Z-Score Levels", group=g_plotting)
+
+// =============================================================================
+// #endregion
+// =============================================================================
+// #region CORE LOGIC
+// =============================================================================
+
+// --- Calculate Log Price ---
+log_price = math.log(close)
+
+// --- Estimate Ornstein-Uhlenbeck Parameters ---
+// 1. Mean (μ) of the log price over the lookback period
+ou_mean = ta.sma(log_price, lookback_period)
+
+// 2. Autocorrelation of log prices with a lag of 1
+// This is an approximation of the mean reversion speed parameter (θ)
+correlation = ta.correlation(log_price, log_price[1], lookback_period)
+ou_theta = correlation > 0 ? -math.log(correlation) : na
+
+// 3. Volatility (σ) of the log price process
+stdev_log_price = ta.stdev(log_price, lookback_period)
+ou_sigma = na(ou_theta) ? na : stdev_log_price * math.sqrt(2 * ou_theta)
+
+// --- Calculate Z-Score ---
+// The normalized distance from the mean
+z_score = ou_sigma > 0 ? (log_price - ou_mean) / ou_sigma : na
+
+// =============================================================================
+// #endregion
+// =============================================================================
+// #region STRATEGY LOGIC
+// =============================================================================
+
+// --- Entry Conditions ---
+long_entry_condition = ta.crossunder(z_score, -entry_threshold)
+short_entry_condition = ta.crossover(z_score, entry_threshold)
+
+// --- Exit Conditions ---
+long_exit_condition = ta.crossover(z_score, -exit_threshold)
+short_exit_condition = ta.crossunder(z_score, exit_threshold)
+
+// --- Stop Loss Calculation ---
+long_stop_price = strategy.position_avg_price * (1 - stoploss_pct / 100)
+short_stop_price = strategy.position_avg_price * (1 + stoploss_pct / 100)
+
+// --- Execute Trades ---
+if (trade_direction == "Long Only" or trade_direction == "Both")
+    if (long_entry_condition)
+        strategy.entry("Long", strategy.long)
+        strategy.exit("Long SL", from_entry="Long", stop=long_stop_price)
+    if (long_exit_condition)
+        strategy.close("Long", comment="Exit Long Signal")
+
+if (trade_direction == "Short Only" or trade_direction == "Both")
+    if (short_entry_condition)
+        strategy.entry("Short", strategy.short)
+        strategy.exit("Short SL", from_entry="Short", stop=short_stop_price)
+    if (short_exit_condition)
+        strategy.close("Short", comment="Exit Short Signal")
+
+// =============================================================================
+// #endregion
+// =============================================================================
+// #region PLOTTING
+// =============================================================================
+
+// --- Price Bands on Main Chart ---
+upper_band = math.exp(ou_mean + entry_threshold * ou_sigma)
+lower_band = math.exp(ou_mean - entry_threshold * ou_sigma)
+
+plot(show_price_bands ? upper_band : na, "Upper Band", color=color.new(color.red, 0), style=plot.style_circles)
+plot(show_price_bands ? lower_band : na, "Lower Band", color=color.new(color.green, 0), style=plot.style_circles)
+
+// --- OU Mean in Subplot ---
+plot(ou_mean, "OU Mean (Log Scale)", color=color.blue, display=display.pane)
+
+// --- Z-Score in a Separate Subplot ---
+plot(z_score, "Z-Score", color=color.orange, display=display.pane)
+hline(0, "Zero Line", color=color.gray, linestyle=hline.style_dashed)
+hline(entry_threshold, "Entry Threshold", color=color.red)
+hline(-entry_threshold, "-Entry Threshold", color=color.green)
+hline(exit_threshold, "Exit Threshold", color=color.red, linestyle=hline.style_dotted)
+hline(-exit_threshold, "-Exit Threshold", color=color.green, linestyle=hline.style_dotted)
+
+// =============================================================================
+// #endregion

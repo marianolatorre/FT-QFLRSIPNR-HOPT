@@ -1,0 +1,28 @@
+---
+services:
+  freqtrade:
+    # Use FreqAI image with plotting capabilities
+    image: freqtradeorg/freqtrade:stable_plot
+    # Enable GPU Image and GPU Resources (only relevant for freqAI)
+    # Uncomment if you have NVIDIA GPU
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+    restart: unless-stopped
+    container_name: freqtrade
+    volumes:
+      - "./user_data:/freqtrade/user_data"
+    # Expose api on port 8080 (localhost only)
+    # Please read the https://www.freqtrade.io/en/stable/rest-api/ documentation
+    # for more information.
+    ports:
+      - "127.0.0.1:8080:8080"
+    # Default command used when running `docker compose up`
+    command: >
+      webserver
+      --config /freqtrade/user_data/config_spot.json
+      

@@ -19,7 +19,7 @@ import sys
 
 class WalkForwardTester:
     def __init__(self, insample_days, outsample_days, num_walks, end_date=None,
-                 pair="BTC/USDT:USDT", epochs=200, hyperopt_loss="SharpeHyperOptLoss",
+                 pair="BTC/USDT:USDT", timeframe="1h", epochs=200, hyperopt_loss="SharpeHyperOptLoss",
                  strategy="QFLRSI_Strategy", config="user_data/config.json", generate_report=False,
                  spaces=["buy", "sell"], original_command=None):
         self.insample_days = insample_days
@@ -27,6 +27,7 @@ class WalkForwardTester:
         self.num_walks = num_walks
         self.end_date = datetime.strptime(end_date, "%Y%m%d") if end_date else datetime.now()
         self.pair = pair
+        self.timeframe = timeframe
         self.epochs = epochs
         self.hyperopt_loss = hyperopt_loss
         self.strategy = strategy
@@ -136,7 +137,7 @@ class WalkForwardTester:
             "docker-compose", "run", "--rm", "freqtrade", "download-data",
             "--exchange", "bybit",
             "--pairs", self.pair,
-            "--timeframes", "1h",
+            "--timeframes", self.timeframe,
             "--days", str(total_days),
             "--trading-mode", "futures"
         ]
@@ -246,7 +247,7 @@ class WalkForwardTester:
                 "docker-compose", "run", "--rm", "freqtrade", "backtesting",
                 "--config", self.config,
                 "--strategy", self.strategy,
-                "--timeframe", "1h",
+                "--timeframe", self.timeframe,
                 "--timerange", timerange,
                 "--pairs", self.pair,
                 "--export", "trades"
@@ -261,7 +262,7 @@ class WalkForwardTester:
                 "docker-compose", "run", "--rm", "freqtrade", "plot-profit",
                 "--config", self.config,
                 "--strategy", self.strategy,
-                "--timeframe", "1h",
+                "--timeframe", self.timeframe,
                 "--timerange", timerange,
                 "--pairs", self.pair
             ]
@@ -291,7 +292,7 @@ class WalkForwardTester:
                 "docker-compose", "run", "--rm", "freqtrade", "plot-profit",
                 "--config", self.config,
                 "--strategy", self.strategy,
-                "--timeframe", "1h",
+                "--timeframe", self.timeframe,
                 "--timerange", timerange,
                 "--pairs", self.pair
             ]
@@ -321,7 +322,7 @@ class WalkForwardTester:
                 "docker-compose", "run", "--rm", "freqtrade", "plot-profit",
                 "--config", self.config,
                 "--strategy", self.strategy,
-                "--timeframe", "1h",
+                "--timeframe", self.timeframe,
                 "--timerange", timerange,
                 "--pairs", self.pair
             ]
@@ -356,7 +357,7 @@ class WalkForwardTester:
                 "docker-compose", "run", "--rm", "freqtrade", "plot-profit",
                 "--config", self.config,
                 "--strategy", self.strategy,
-                "--timeframe", "1h",
+                "--timeframe", self.timeframe,
                 "--timerange", timerange,
                 "--pairs", self.pair
             ]
@@ -484,6 +485,7 @@ class WalkForwardTester:
             
             # Get the most recent ZIP file
             latest_zip = max(zip_files, key=os.path.getctime)
+            
             print(f"Extracting data from: {latest_zip}")
             
             backtest_data = {
@@ -497,7 +499,7 @@ class WalkForwardTester:
                 # Read main backtest results (contains trades)
                 main_file = None
                 for name in z.namelist():
-                    if name.endswith('.json') and not '_config' in name and not '_QFLRSI' in name:
+                    if name.endswith('.json') and not '_config' in name and not f'_{self.strategy}.json' in name:
                         main_file = name
                         break
                 
@@ -551,7 +553,7 @@ class WalkForwardTester:
                 # Read strategy parameters
                 strategy_file = None
                 for name in z.namelist():
-                    if '_QFLRSI_Strategy.json' in name or f'_{self.strategy}.json' in name:
+                    if f'_{self.strategy}.json' in name:
                         strategy_file = name
                         break
                 
@@ -709,7 +711,7 @@ class WalkForwardTester:
             "--hyperopt-loss", self.hyperopt_loss,
             "--spaces", *self.spaces,
             "--epochs", str(self.epochs),
-            "--timeframe", "1h",
+            "--timeframe", self.timeframe,
             "--timerange", timerange,
             "--pairs", self.pair,
             "-j", "-1"
@@ -719,7 +721,7 @@ class WalkForwardTester:
         print(f"Command: {' '.join(cmd)}")
         
         try:
-            result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+            subprocess.run(cmd, check=True, capture_output=True, text=True)
             print(f"Hyperopt completed successfully for walk {walk_num}")
             return True
         except subprocess.CalledProcessError as e:
@@ -735,7 +737,7 @@ class WalkForwardTester:
             "docker-compose", "run", "--rm", "freqtrade", "backtesting",
             "--config", self.config,
             "--strategy", self.strategy,
-            "--timeframe", "1h",
+            "--timeframe", self.timeframe,
             "--timerange", timerange,
             "--pairs", self.pair,
             "--export", "trades"
@@ -749,7 +751,7 @@ class WalkForwardTester:
         pre_backtest_time = time.time()
         
         try:
-            result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+            subprocess.run(cmd, check=True, capture_output=True, text=True)
             print(f"Backtest completed successfully for walk {walk_num}")
             
             # Find the backtest file that was just created
@@ -765,6 +767,7 @@ class WalkForwardTester:
             print(f"Backtest failed for walk {walk_num}: {e}")
             print(f"Error output: {e.stderr}")
             return False
+    
     
     def find_latest_backtest_file(self, after_time):
         """Find the most recent backtest file created after the specified time"""
@@ -793,6 +796,7 @@ class WalkForwardTester:
             
         # Return the most recent file
         return max(recent_files, key=os.path.getmtime)
+    
     
     def run_walk_forward_test(self):
         """Execute the complete walk forward test"""
@@ -834,13 +838,20 @@ class WalkForwardTester:
                 'backtest_results': None,
                 'best_params': None,
                 'wfer': None,
-                'degradation': None
+                'degradation': None,
+                'status': 'pending',
+                'failure_reason': None
             }
             
             # Run hyperopt
-            if not self.run_hyperopt(window['hyperopt_start'], window['hyperopt_end'], window['walk']):
-                print(f"Stopping due to hyperopt failure in walk {window['walk']}")
-                return False
+            hyperopt_success = self.run_hyperopt(window['hyperopt_start'], window['hyperopt_end'], window['walk'])
+            if not hyperopt_success:
+                print(f"🚨 Hyperopt failed for walk {window['walk']} - marking as failed and continuing with next walk")
+                walk_data['status'] = 'failed_hyperopt'
+                walk_data['failure_reason'] = 'Hyperopt optimization failed (possible NaN values or insufficient data)'
+                # Add failed walk to results and continue with next walk
+                self.walk_forward_results['walks'].append(walk_data)
+                continue
             
             # Collect hyperopt results
             hyperopt_data = self.collect_hyperopt_results(window['walk'])
@@ -851,8 +862,12 @@ class WalkForwardTester:
             # Run backtest
             backtest_result = self.run_backtest(window['backtest_start'], window['backtest_end'], window['walk'])
             if not backtest_result:
-                print(f"Stopping due to backtest failure in walk {window['walk']}")
-                return False
+                print(f"🚨 Backtest failed for walk {window['walk']} - marking as failed and continuing with next walk")
+                walk_data['status'] = 'failed_backtest'
+                walk_data['failure_reason'] = 'Backtest execution failed'
+                # Add failed walk to results and continue with next walk
+                self.walk_forward_results['walks'].append(walk_data)
+                continue
             
             # Store backtest filename if available
             backtest_filename = backtest_result if isinstance(backtest_result, str) else None
@@ -899,6 +914,9 @@ class WalkForwardTester:
                 'oos_chart_success': oos_chart_success
             }
             
+            # Mark walk as successful
+            walk_data['status'] = 'completed'
+            
             # Add walk data to results
             self.walk_forward_results['walks'].append(walk_data)
         
@@ -926,6 +944,8 @@ def main():
                         help="End date in YYYYMMDD format (default: today)")
     parser.add_argument("--pair", type=str, default="BTC/USDT:USDT",
                         help="Trading pair (default: BTC/USDT:USDT)")
+    parser.add_argument("--timeframe", type=str, required=True,
+                        help="Timeframe for analysis (e.g., 1h, 4h, 1d)")
     parser.add_argument("--epochs", type=int, default=200,
                         help="Number of hyperopt epochs (default: 200)")
     parser.add_argument("--hyperopt-loss", type=str, default="SharpeHyperOptLoss",
@@ -950,6 +970,7 @@ def main():
         num_walks=args.num_walks,
         end_date=args.end_date,
         pair=args.pair,
+        timeframe=args.timeframe,
         epochs=args.epochs,
         hyperopt_loss=args.hyperopt_loss,
         strategy=args.strategy,

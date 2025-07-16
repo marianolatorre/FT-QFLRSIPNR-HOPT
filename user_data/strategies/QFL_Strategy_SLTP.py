@@ -28,23 +28,19 @@ class QFL_Strategy_SLTP(IStrategy):
     # Can this strategy go short?
     can_short = False
     
-    # Hyperopt-optimized ROI parameters (take profit)
-    roi_t1 = DecimalParameter(0.01, 0.15, default=0.05, space='roi', optimize=True)
-    roi_t2 = DecimalParameter(0.01, 0.10, default=0.03, space='roi', optimize=True)
-    roi_t3 = DecimalParameter(0.005, 0.05, default=0.02, space='roi', optimize=True)
+    # Static ROI table - optimized automatically by Freqtrade when using --spaces roi
+    minimal_roi = {
+        "0": 0.10,
+        "40": 0.04,
+        "100": 0.02,
+        "240": 0
+    }
     
     # Hyperopt-optimized stoploss
     stoploss_opt = DecimalParameter(-0.35, -0.02, default=-0.15, space='stoploss')
     
     def __init__(self, config: dict) -> None:
         super().__init__(config)
-        # Set minimal_roi dynamically based on hyperopt parameters
-        self.minimal_roi = {
-            "0": self.roi_t1.value,
-            "30": self.roi_t2.value,
-            "60": self.roi_t3.value,
-            "120": 0
-        }
         # Set stoploss value
         self.stoploss = self.stoploss_opt.value
     
@@ -57,18 +53,10 @@ class QFL_Strategy_SLTP(IStrategy):
     # Plot configuration for web UI
     plot_config = {
         'main_plot': {
-            'qfl_fractal_up': {
-                'color': 'lime',
-                'type': 'line'
-            },
             'qfl_fractal_down': {
-                'color': 'red', 
-                'type': 'line'
-            }
-        },
-        'subplots': {
-            'QFL_Age': {
-                'qfl_base_age': {'color': 'orange'}
+                'color': '#ba6670',
+                'type': 'scatter',
+                'scatterSymbolSize': 3
             }
         }
     }
@@ -76,9 +64,11 @@ class QFL_Strategy_SLTP(IStrategy):
     # QFL Parameters (equivalent to Pine Script inputs)
     # Make QFL timeframe configurable - options: '1h', '2h', '4h' for base detection
     qfl_timeframe = '1h'  # Higher timeframe for base detection
-    volume_ma_period = IntParameter(5, 10, default=6, space='buy')
-    buy_percentage = DecimalParameter(2.0, 5.0, default=3.5, space='buy')
-    max_base_age = IntParameter(0, 50, default=0, space='buy')  # 0 = disabled
+    # volume_ma_period = IntParameter(5, 10, default=6, space='buy')
+    volume_ma_period = 6
+    buy_percentage = DecimalParameter(0.5, 10.0, default=3.5, space='buy')
+    #max_base_age = IntParameter(0, 50, default=0, space='buy')  # 0 = disabled
+    max_base_age = 0  # 0 = disabled
     allow_consecutive_signals = True  # Pine: allowConsecutiveSignals
     
     def populate_indicators(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
@@ -86,7 +76,7 @@ class QFL_Strategy_SLTP(IStrategy):
         Populate indicators for QFL strategy
         """
         # Volume moving average
-        dataframe['volume_ma'] = ta.SMA(dataframe['volume'], timeperiod=self.volume_ma_period.value)
+        dataframe['volume_ma'] = ta.SMA(dataframe['volume'], timeperiod=self.volume_ma_period)
         
         # Since we're running 1h chart with 1h QFL timeframe, calculate directly on current timeframe
         if self.qfl_timeframe == self.timeframe:
@@ -140,7 +130,7 @@ class QFL_Strategy_SLTP(IStrategy):
         Translates the Pine Script QFL logic to Python
         """
         # Volume moving average for fractal validation
-        dataframe['volume_ma'] = ta.SMA(dataframe['volume'], timeperiod=self.volume_ma_period.value)
+        dataframe['volume_ma'] = ta.SMA(dataframe['volume'], timeperiod=self.volume_ma_period)
         
         # Fractal detection (Pine: up/down conditions)
         # Up fractal: high[3]>high[4] and high[4]>high[5] and high[2]<high[3] and high[1]<high[2] and volume[3]>vam[3]
@@ -196,8 +186,8 @@ class QFL_Strategy_SLTP(IStrategy):
         """
         # Age condition (Pine: agecond = maxbaseage == 0 or age < maxbaseage)
         age_condition = (
-            (self.max_base_age.value == 0) | 
-            (dataframe['qfl_base_age'] < self.max_base_age.value)
+            (self.max_base_age == 0) | 
+            (dataframe['qfl_base_age'] < self.max_base_age)
         )
         
         # Calculate percentage below fractal
@@ -223,19 +213,19 @@ class QFL_Strategy_SLTP(IStrategy):
             )
         
         # Debug logging - show ALL signals that trigger
-        signal_rows = dataframe[buy_condition]
-        if len(signal_rows) > 0:
-            print(f"\n🚨 QFL BUY SIGNALS DETECTED ({len(signal_rows)} signals):")
-            for idx, row in signal_rows.iterrows():
-                print(f"  📅 {row.name} | 💰 BTC Price: ${row['close']:.2f} | 📉 Fractal Base: ${row['qfl_fractal_down']:.2f} | 📊 Below%: {row['price_pct_below_fractal']:.2f}% (threshold: {row['buy_threshold']:.2f}%) | 🕐 Age: {row['qfl_base_age']}")
-        else:
-            print(f"\n❌ No QFL buy signals found in this period")
-            # Show some sample conditions for debugging
-            recent_data = dataframe.tail(5)
-            print(f"DEBUG: Recent conditions (last 5 rows):")
-            for idx, row in recent_data.iterrows():
-                below_threshold = row['price_pct_below_fractal'] < row['buy_threshold']
-                print(f"  {row.name}: close=${row['close']:.2f}, fractal=${row['qfl_fractal_down']:.2f}, below%={row['price_pct_below_fractal']:.2f}%, threshold={row['buy_threshold']:.2f}%, below_threshold={below_threshold}")
+        # signal_rows = dataframe[buy_condition]
+        # if len(signal_rows) > 0:
+        #     print(f"\n🚨 QFL BUY SIGNALS DETECTED ({len(signal_rows)} signals):")
+        #     for idx, row in signal_rows.iterrows():
+        #         print(f"  📅 {row.name} | 💰 BTC Price: ${row['close']:.2f} | 📉 Fractal Base: ${row['qfl_fractal_down']:.2f} | 📊 Below%: {row['price_pct_below_fractal']:.2f}% (threshold: {row['buy_threshold']:.2f}%) | 🕐 Age: {row['qfl_base_age']}")
+        # else:
+        #     print(f"\n❌ No QFL buy signals found in this period")
+        #     # Show some sample conditions for debugging
+        #     recent_data = dataframe.tail(5)
+        #     print(f"DEBUG: Recent conditions (last 5 rows):")
+        #     for idx, row in recent_data.iterrows():
+        #         below_threshold = row['price_pct_below_fractal'] < row['buy_threshold']
+        #         print(f"  {row.name}: close=${row['close']:.2f}, fractal=${row['qfl_fractal_down']:.2f}, below%={row['price_pct_below_fractal']:.2f}%, threshold={row['buy_threshold']:.2f}%, below_threshold={below_threshold}")
         
         dataframe.loc[buy_condition, 'enter_long'] = 1
         

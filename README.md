@@ -86,7 +86,7 @@ Walk forward testing automatically downloads missing data for the specified pair
 
 ```bash
 # The system will automatically download data for the specified pair
-python3 walk_forward_test.py --pair SOL/USDT:USDT --insample-days 30 --outsample-days 15 --num-walks 3
+python3 walk_forward_test.py --pair SOL/USDT:USDT --timeframe 1h --insample-days 30 --outsample-days 15 --num-walks 3
 ```
 
 **Config Validation**: The system validates that `--pair` exists in your `config.json` pair_whitelist before proceeding and provides helpful error messages with configuration examples if not found.
@@ -102,6 +102,7 @@ The walk forward test automatically performs hyperopt optimization followed by b
 - `--insample-days` - Length of the training period (hyperopt optimization)
 - `--outsample-days` - Length of the testing period (out-of-sample validation)
 - `--num-walks` - Number of walk forward iterations to perform
+- `--timeframe` - **REQUIRED** - Timeframe for analysis (e.g., 1h, 4h, 1d, 15m)
 - `--epochs` - Number of hyperopt optimization epochs per walk (default: 200)
 - `--strategy` - Strategy name to test (default: QFLRSI_Strategy)
 - `--spaces` - Hyperopt spaces to optimize (default: buy sell)
@@ -113,7 +114,7 @@ The walk forward test automatically performs hyperopt optimization followed by b
 
 #### Basic Usage
 ```bash
-python3 walk_forward_test.py --insample-days 30 --outsample-days 15 --num-walks 3 --pair BTC/USDT:USDT
+python3 walk_forward_test.py --insample-days 30 --outsample-days 15 --num-walks 3 --timeframe 1h --pair BTC/USDT:USDT
 ```
 
 #### Strategy Examples
@@ -124,6 +125,7 @@ python3 walk_forward_test.py \
     --insample-days 30 \
     --outsample-days 15 \
     --num-walks 3 \
+    --timeframe 1h \
     --epochs 400 \
     --strategy QFLRSI_Strategy \
     --spaces buy sell \
@@ -137,6 +139,7 @@ python3 walk_forward_test.py \
     --insample-days 30 \
     --outsample-days 15 \
     --num-walks 3 \
+    --timeframe 1h \
     --epochs 400 \
     --strategy QFL_Strategy_SLTP \
     --spaces buy roi stoploss \
@@ -151,6 +154,7 @@ python3 walk_forward_test.py \
     --insample-days 30 \
     --outsample-days 15 \
     --num-walks 3 \
+    --timeframe 1h \
     --strategy QFLRSI_Strategy \
     --pair SOL/USDT:USDT \
     --generate-report
@@ -160,6 +164,7 @@ python3 walk_forward_test.py \
     --insample-days 30 \
     --outsample-days 15 \
     --num-walks 3 \
+    --timeframe 1h \
     --strategy QFLRSI_Strategy \
     --pair DOGE/USDT:USDT \
     --generate-report
