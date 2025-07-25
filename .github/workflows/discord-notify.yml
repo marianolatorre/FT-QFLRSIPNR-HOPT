@@ -13,10 +13,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Full history needed for git log
+          fetch-depth: 0  # need full history for git log ranges
 
-      - name: Format commit list
-        id: commitlog
+      - name: Build commit list
+        id: commits
         run: |
           if git rev-parse "${{ github.event.before }}" >/dev/null 2>&1; then
             RANGE="${{ github.event.before }}..${{ github.sha }}"
@@ -25,32 +25,34 @@ jobs:
           fi
 
           REPO_URL="https://github.com/${{ github.repository }}"
+          COMMITS=$(git log $RANGE --pretty=format:"• **%h** – %s by _%an_ (<$REPO_URL/commit/%H>)")
 
-          COMMITS=$(git log $RANGE --pretty=format:"• [\`%h\`]($REPO_URL/commit/%H) – %s by *%an*")
-
-          echo "commits<<EOF" >> $GITHUB_OUTPUT
+          echo "list<<EOF" >> $GITHUB_OUTPUT
           echo "$COMMITS" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
-      - name: Notify Discord
+      - name: Send to Discord
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
         run: |
-          echo '{
-            "username": "GitHub",
-            "avatar_url": "https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png",
-            "embeds": [
-              {
-                "title": "📦 New push to \"'${{ github.ref_name }}'\"",
-                "description": "'"${{ steps.commitlog.outputs.commits }}"'",
-                "color": 5814783,
-                "footer": {
-                  "text": "'"${{ github.repository }} • ${{ github.actor }}"'"
-                },
-                "timestamp": "'"${{ github.event.head_commit.timestamp }}"'"
-              }
-            ]
-          }' > payload.json
+          PAYLOAD=$(jq -n \
+            --arg title "📦 New push to \"${{ github.ref_name }}\"" \
+            --arg desc "${{ steps.commits.outputs.list }}" \
+            --arg footer "${{ github.repository }} • ${{ github.actor }}" \
+            --arg ts "${{ github.event.head_commit.timestamp }}" \
+            '{
+              username: "GitHub",
+              avatar_url: "https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png",
+              embeds: [{
+                title: $title,
+                description: $desc,
+                color: 5814783,
+                footer: { text: $footer },
+                timestamp: $ts
+              }]
+            }')
 
-          curl -X POST -H "Content-Type: application/json" \
-               -d @payload.json $DISCORD_WEBHOOK
+          curl -H "Content-Type: application/json" \
+               -X POST \
+               -d "$PAYLOAD" \
+               "$DISCORD_WEBHOOK"
