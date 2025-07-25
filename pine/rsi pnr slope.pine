@@ -1,0 +1,28 @@
+// This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © TheTradingParrot
+
+//@version=6
+indicator("TTP RSI slope PNR")
+
+lookback = input.int(10)
+src  = input.source(close)
+
+rsi = ta.rsi(src, 14)
+
+rsidiffMAX = rsi - ta.lowest(rsi, lookback)
+rsidiffMIN = ta.highest(rsi, lookback) - rsi
+
+// plot(rsidiffMAX, "rsidiffMAX")
+// plot(rsidiffMIN, "rsidiffMIN")
+
+
+max = ta.percentile_nearest_rank(rsidiffMAX,150,99)
+min = ta.percentile_nearest_rank(rsidiffMIN, 150, 99)
+
+plot(rsi, "rsi", color = color.white)
+
+// plot(max, "max")
+// plot(min, "min")
+
+plotshape(ta.crossover(rsidiffMAX, max), "s", style = shape.labeldown, location = location.abovebar, color=color.red, text = "s", textcolor = color.white, force_overlay = true)
+plotshape(ta.crossover(rsidiffMIN, min), "b", style = shape.labelup, location = location.belowbar, color=color.green, text = "s", textcolor = color.white, force_overlay = true)
