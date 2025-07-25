@@ -8,6 +8,7 @@ on:
 jobs:
   discord-notify:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -24,16 +25,13 @@ jobs:
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
         run: |
-          curl -H "Content-Type: application/json" \
-               -X POST \
-               -d @- $DISCORD_WEBHOOK <<EOF
-          {
+          echo '{
             "username": "GitHub",
             "avatar_url": "https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png",
             "embeds": [
               {
-                "title": "📦 New push to \`${{ github.ref_name }}\`",
-                "description": "${{ steps.commitlog.outputs.commits }}",
+                "title": "📦 New push to \"${{ github.ref_name }}\"",
+                "description": "'"${{ steps.commitlog.outputs.commits }}"'",
                 "color": 5814783,
                 "footer": {
                   "text": "${{ github.repository }} • ${{ github.actor }}"
@@ -41,5 +39,7 @@ jobs:
                 "timestamp": "${{ github.event.head_commit.timestamp }}"
               }
             ]
-          }
-EOF
+          }' > payload.json
+
+          curl -X POST -H "Content-Type: application/json" \
+               -d @payload.json $DISCORD_WEBHOOK
