@@ -3,7 +3,7 @@ name: Notify Discord on Push
 on:
   push:
     branches:
-      - main
+      - main  # Change this if you want another branch
 
 jobs:
   discord-notify:
@@ -12,11 +12,23 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch full history for git log
 
       - name: Format commit list
         id: commitlog
         run: |
-          COMMITS=$(git log --pretty=format:'• [`%h`](https://github.com/${{ github.repository }}/commit/%H) – %s by *%an*' ${{ github.event.before }}..${{ github.sha }})
+          # Determine commit range
+          if git rev-parse "${{ github.event.before }}" >/dev/null 2>&1; then
+            RANGE="${{ github.event.before }}..${{ github.sha }}"
+          else
+            RANGE="${{ github.sha }}"
+          fi
+
+          # Generate commit list
+          COMMITS=$(git log $RANGE --pretty=format:'• [`%h`](https://github.com/${{ github.repository }}/commit/%H) – %s by *%an*')
+
+          # Save output
           echo "commits<<EOF" >> $GITHUB_OUTPUT
           echo "$COMMITS" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
@@ -30,13 +42,13 @@ jobs:
             "avatar_url": "https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png",
             "embeds": [
               {
-                "title": "📦 New push to \"${{ github.ref_name }}\"",
+                "title": "📦 New push to \"'${{ github.ref_name }}'\"",
                 "description": "'"${{ steps.commitlog.outputs.commits }}"'",
                 "color": 5814783,
                 "footer": {
-                  "text": "${{ github.repository }} • ${{ github.actor }}"
+                  "text": "'"${{ github.repository }} • ${{ github.actor }}"'"
                 },
-                "timestamp": "${{ github.event.head_commit.timestamp }}"
+                "timestamp": "'"${{ github.event.head_commit.timestamp }}"'"
               }
             ]
           }' > payload.json
