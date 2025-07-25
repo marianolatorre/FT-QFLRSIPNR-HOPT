@@ -43,7 +43,10 @@
             "SOL/USDT:USDT",
             "DOGE/USDT:USDT",
             "XRP/USDT:USDT",
-            "ETH/USDT:USDT"
+            "ETH/USDT:USDT",
+            "ADA/USDT:USDT",
+            "RUNE/USDT:USDT",
+            "LINK/USDT:USDT"
         ],
         "pair_blacklist": [
             "BNB/.*"
