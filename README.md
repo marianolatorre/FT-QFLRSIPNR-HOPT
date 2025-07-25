@@ -36,11 +36,10 @@ A comprehensive framework for algorithmic trading strategy development, testing,
 - Python 3.8+
 - At least 8GB RAM for large datasets
 
-## Installation
-
-1. **Download docker-compose.yml**
+1. **Clone the repo or fork for pull request contributions**
    ```bash
-   curl https://raw.githubusercontent.com/freqtrade/freqtrade/stable/docker-compose.yml -o docker-compose.yml
+   git clone https://github.com/marianolatorre/FT-QFLRSIPNR-HOPT.git
+   cd FT-QFLRSIPNR-HOPT
    ```
 
 2. **Pull the freqtrade image**
@@ -48,16 +47,11 @@ A comprehensive framework for algorithmic trading strategy development, testing,
    docker compose pull
    ```
 
-3. **Create user directory structure**
+3. **Create a new configuration if using different settings, like a different exchange**
    ```bash
-   docker compose run --rm freqtrade create-userdir --userdir user_data
+   docker compose run --rm freqtrade new-config --config user_data/config_new.json
    ```
-
-4. **Create configuration**
-   ```bash
-   docker compose run --rm freqtrade new-config --config user_data/config.json
-   ```
-
+  
 ## Data Setup
 
 ### Data Requirements for Walk Forward Testing
