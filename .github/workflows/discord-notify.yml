@@ -1,0 +1,17 @@
+name: Notify Discord on Push
+
+on:
+  push:
+    branches:
+      - main  # You can change this to any branch you want to track
+
+jobs:
+  discord-notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Discord Notification
+        run: |
+          curl -H "Content-Type: application/json" \
+               -X POST \
+               -d "{\"content\": \"🚀 New push to **main** branch by *${{ github.actor }}* in [${{ github.repository }}](https://github.com/${{ github.repository }})\"}" \
+               https://discord.com/api/webhooks/1398323576255545465/iTsk6fuMrpUKLWnlxD7Wv8fc1oNPARJRMo8PGQEItt2PL5X9tJ-E9vzQhXRIESJm7zem
