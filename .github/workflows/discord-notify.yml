@@ -3,15 +3,43 @@ name: Notify Discord on Push
 on:
   push:
     branches:
-      - main  # You can change this to any branch you want to track
+      - main
 
 jobs:
   discord-notify:
     runs-on: ubuntu-latest
     steps:
-      - name: Send Discord Notification
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Format commit list
+        id: commitlog
+        run: |
+          COMMITS=$(git log --pretty=format:'• [`%h`](https://github.com/${{ github.repository }}/commit/%H) – %s by *%an*' ${{ github.event.before }}..${{ github.sha }})
+          echo "commits<<EOF" >> $GITHUB_OUTPUT
+          echo "$COMMITS" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Notify Discord
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
         run: |
           curl -H "Content-Type: application/json" \
                -X POST \
-               -d "{\"content\": \"🚀 New push to **main** branch by *${{ github.actor }}* in [${{ github.repository }}](https://github.com/${{ github.repository }})\"}" \
-               https://discord.com/api/webhooks/1398323576255545465/iTsk6fuMrpUKLWnlxD7Wv8fc1oNPARJRMo8PGQEItt2PL5X9tJ-E9vzQhXRIESJm7zem
+               -d @- $DISCORD_WEBHOOK <<EOF
+          {
+            "username": "GitHub",
+            "avatar_url": "https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png",
+            "embeds": [
+              {
+                "title": "📦 New push to \`${{ github.ref_name }}\`",
+                "description": "${{ steps.commitlog.outputs.commits }}",
+                "color": 5814783,
+                "footer": {
+                  "text": "${{ github.repository }} • ${{ github.actor }}"
+                },
+                "timestamp": "${{ github.event.head_commit.timestamp }}"
+              }
+            ]
+          }
+EOF
