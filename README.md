@@ -1,17 +1,34 @@
 
-# Freqtrade Walk Forward Testing
+# Freqtrade Strategy Testing & Analysis Suite
 
-A comprehensive walk forward testing framework for Freqtrade algorithmic trading strategies with support for automated backtesting and hyperopt optimization.
+A comprehensive framework for algorithmic trading strategy development, testing, and validation with Freqtrade. This repository provides two complementary systems for rigorous strategy analysis:
+
+## 🧪 **Experiment Management System** (`experiments/`)
+**Stage-1 strategy validation and parameter optimization**
+- **In-Sample/Out-of-Sample Testing**: Controlled methodology for strategy validation
+- **Multi-Dimensional Analysis**: Compare strategies across time periods, assets, timeframes, hyperopt spaces, and loss functions
+- **Batch Experiment Processing**: Run dozens of experiments unattended with automated CSV tracking
+- **Parameter Narrowing**: Quickly identify optimal settings before expensive walk forward testing
+- **Configurable Loss Functions**: Test with Sharpe, Sortino, Calmar, and custom optimization objectives
+
+## 🚀 **Walk Forward Testing System** (root)
+**Full rolling window validation for production-ready strategies**
+- **Automated Time-Series Cross-Validation**: Rolling window walk forward analysis
+- **Multi-Asset Support**: Test any trading pair with automatic data download and validation
+- **Interactive Charts**: Generate profit charts for both in-sample and out-of-sample periods
+- **Comprehensive Reporting**: Detailed HTML reports with performance metrics and chart links
+
+## 📊 **Recommended Workflow**
+1. **Stage 1**: Use `experiments/` to rapidly test and compare strategy variations
+2. **Stage 2**: Use walk forward testing on promising strategies identified in Stage 1
+3. **Stage 3**: Deploy validated strategies to live trading
 
 ## Features
 
-- **Walk Forward Testing**: Automated time-series cross-validation for trading strategies
 - **Hyperopt Integration**: Automatic parameter optimization using Freqtrade's hyperopt
-- **Multi-Asset Support**: Test any trading pair with automatic data download and validation
 - **Multi-Strategy Support**: Compatible with different hyperopt spaces (buy/sell, roi/stoploss, etc.)
-- **Interactive Charts**: Generate profit charts for both in-sample and out-of-sample periods
-- **Comprehensive Reporting**: Detailed HTML reports with performance metrics and chart links
 - **Docker Support**: Full containerized environment for consistent testing
+- **Numbered Experiment Tracking**: Sequential experiment folders prevent conflicts and enable easy comparison
 
 ## Requirements
 
