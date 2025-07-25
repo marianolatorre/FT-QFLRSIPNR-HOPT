@@ -3,7 +3,7 @@ name: Notify Discord on Push
 on:
   push:
     branches:
-      - main  # Change if needed
+      - main
 
 jobs:
   discord-notify:
@@ -13,7 +13,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Required for full git history
+          fetch-depth: 0  # Full history needed for git log
 
       - name: Format commit list
         id: commitlog
@@ -25,14 +25,9 @@ jobs:
           fi
 
           REPO_URL="https://github.com/${{ github.repository }}"
-          
-          # Format commit messages with clickable short hash
-          COMMITS=$(git log $RANGE --pretty=format:"• [%%h]($REPO_URL/commit/%%H) – %%s by *%%an*")
-          
-          # Bash needs double %% to escape % in git log, convert back
-          COMMITS=$(echo "$COMMITS" | sed 's/%%/%/g')
 
-          # Send to GitHub Actions output
+          COMMITS=$(git log $RANGE --pretty=format:"• [\`%h\`]($REPO_URL/commit/%H) – %s by *%an*")
+
           echo "commits<<EOF" >> $GITHUB_OUTPUT
           echo "$COMMITS" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
