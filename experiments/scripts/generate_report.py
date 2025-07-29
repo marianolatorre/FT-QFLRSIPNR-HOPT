@@ -15,6 +15,7 @@ CSV_HEADERS = [
     "IS_days",
     "OOS_days",
     "epochs",
+    "loss_function",
     "Status",
     "Total profit %",
     "Max Drawdown (Acct)",
@@ -224,11 +225,13 @@ def get_csv_row_as_string(experiment_dir, results, primary_strategy_name, experi
     is_days_match = re.search(r"IS Length \(days\): (\d+)", log_content)
     oos_days_match = re.search(r"OOS Length \(days\): (\d+)", log_content)
     epochs_match = re.search(r"Epochs: (\d+)", log_content)
+    loss_function_match = re.search(r"Loss Function: (.+)", log_content)
     
     start_date = start_date_match.group(1) if start_date_match else "N/A"
     is_days = is_days_match.group(1) if is_days_match else "N/A"
     oos_days = oos_days_match.group(1) if oos_days_match else "N/A"
     epochs = epochs_match.group(1) if epochs_match else "N/A"
+    loss_function = loss_function_match.group(1) if loss_function_match else "N/A"
     
     # Load status information
     status_dict = load_experiment_status(experiment_dir)
@@ -260,6 +263,7 @@ def get_csv_row_as_string(experiment_dir, results, primary_strategy_name, experi
         "IS_days": is_days,
         "OOS_days": oos_days,
         "epochs": epochs,
+        "loss_function": loss_function,
         "Status": strategy_status,
         "stoploss": strategy_params["stoploss"],
         "buy_params": strategy_params["buy_params"],

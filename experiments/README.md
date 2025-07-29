@@ -129,6 +129,7 @@ Consolidated results from all experiments with columns:
 - `IS_days` - In-sample period length in days
 - `OOS_days` - Out-of-sample period length in days
 - `epochs` - Number of epochs used in hyperoptimization
+- `loss_function` - Hyperopt loss function used (SharpeHyperOptLoss, SortinoHyperOptLoss, etc.)
 - `Status` - Success/Failed status
 - `Total profit %` - Total profit percentage
 - `Max Drawdown (Acct)` - Maximum drawdown
@@ -323,6 +324,49 @@ Add debugging to orchestrator:
 # Edit run_all_experiments.sh and add at the top:
 set -x  # Enable debug output
 ```
+
+## 🔄 Report Regeneration
+
+### Regenerating Summary CSV from Existing Experiments
+
+If you need to rebuild the `summary.csv` file (e.g., after adding new columns or fixing data issues), you can regenerate it from existing experiment outputs without re-running the expensive hyperopt/backtest process.
+
+**Use cases:**
+- Upgrade CSV schema with new columns (like `loss_function`)
+- Fix corrupted or missing summary.csv
+- Recover data after accidental deletion
+- Apply retroactive changes to CSV format
+
+### Regeneration Command
+
+```bash
+# Backup existing summary.csv (optional)
+cp experiments/outputs/summary.csv experiments/outputs/summary.csv.backup
+
+# Recreate summary.csv with current schema
+echo "experiment_num,strategy,pair,timeframe,start_date,IS_days,OOS_days,epochs,loss_function,Status,Total profit %,Max Drawdown (Acct),Sortino,Sharpe,Calmar,Profit factor,Trades,Win %,stoploss,buy_params,sell_params,roi_params" > experiments/outputs/summary.csv
+
+# Regenerate all CSV rows from existing experiments
+find experiments/outputs -name "run.log" | while read logfile; do
+    dir=$(dirname "$logfile")
+    exp_num=$(basename $(dirname $(dirname $(dirname "$dir"))) | cut -d. -f1)
+    strategy=$(basename $(dirname $(dirname $(dirname "$dir"))) | cut -d. -f2)
+    python3 experiments/scripts/generate_report.py "$dir" "$strategy" "$exp_num" >> experiments/outputs/summary.csv
+done
+```
+
+**How it works:**
+1. **Finds all experiments**: Locates all `run.log` files in the outputs directory
+2. **Extracts metadata**: Parses experiment number and strategy name from folder structure
+3. **Calls generate_report.py**: Uses existing script to extract data from each experiment
+4. **Rebuilds CSV**: Combines all rows into a complete summary.csv file
+
+**Requirements:**
+- Existing experiment folders must follow the `{exp_num}.{strategy}/` naming convention
+- Each experiment directory must contain a valid `run.log` file
+- The `generate_report.py` script must be available and functional
+
+This approach leverages the existing infrastructure and ensures consistency with the current CSV schema.
 
 ## 🔍 Integration Notes
 
