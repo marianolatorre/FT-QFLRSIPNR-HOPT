@@ -12,3 +12,4 @@ user_data/hyperopt.lock
 .claude/
 user_data/strategies/*.json
 experiments/outputs/
+.DS_Store
